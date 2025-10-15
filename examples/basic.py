@@ -10,5 +10,5 @@ def main():
     print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
 
 
-if '__main__' == __name__:
+if __name__ == '__main__':
     main()
