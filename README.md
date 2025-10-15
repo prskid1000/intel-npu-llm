@@ -61,7 +61,13 @@ You can also use pre-optimized models from the OpenVINO collection:
 
 ## Running Converted Models
 
-Once you've converted a model, you can run inference using [OpenVINO GenAI](https://github.com/openvinotoolkit/openvino.genai).
+You can run inference in two ways:
+1. **Python API** - Direct inference using OpenVINO GenAI
+2. **Inference Server** - Production-ready server using OpenVINO Model Server (OVMS)
+
+## Option 1: Python API (OpenVINO GenAI)
+
+Use [OpenVINO GenAI](https://github.com/openvinotoolkit/openvino.genai) for direct Python inference.
 
 ### Basic Text Generation
 
@@ -124,6 +130,77 @@ config.do_sample = True
 
 result = pipe.generate("Tell me a story", config)
 print(result)
+```
+
+## Option 2: Inference Server (OpenVINO Model Server)
+
+For production deployments, use OpenVINO Model Server (OVMS) to serve your models via REST/gRPC APIs.
+
+### Setup Environment
+
+First, set up the OVMS environment which will activate your virtual environment and add OVMS to your PATH:
+
+**PowerShell** (use dot-sourcing to run in current session):
+```powershell
+. .\ovms\setupvars.ps1
+```
+
+**Command Prompt:**
+```batch
+.\ovms\setupvars.bat
+```
+
+> **Note:** In PowerShell, the dot (`.`) before the script path is important - it ensures the script runs in your current session so environment changes persist.
+
+This script will:
+- ✅ Activate your `.venv` virtual environment
+- ✅ Add OVMS binaries and DLLs to your PATH
+- ✅ Configure the environment for running the model server
+
+### Start the Model Server
+
+After running the setup script, you can start the server:
+
+```powershell
+ovms --model_path models/Qwen/Qwen2.5-3B --model_name qwen --port 9000
+```
+
+### Server Options
+
+```powershell
+# Specify NPU device
+ovms --model_path models/Qwen/Qwen2.5-3B --model_name qwen --port 9000 --target_device NPU
+
+# Enable logging
+ovms --model_path models/Qwen/Qwen2.5-3B --model_name qwen --port 9000 --log_level DEBUG
+
+# Serve multiple models with config file
+ovms --config_path config.json --port 9000
+```
+
+### Client Usage
+
+Once the server is running, you can make inference requests:
+
+**Python Client:**
+```python
+import requests
+
+url = "http://localhost:9000/v2/models/qwen/infer"
+payload = {
+    "inputs": [{"name": "input", "data": ["What is OpenVINO?"]}],
+    "parameters": {"max_new_tokens": 100}
+}
+
+response = requests.post(url, json=payload)
+print(response.json())
+```
+
+**cURL:**
+```bash
+curl -X POST http://localhost:9000/v2/models/qwen/infer \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": [{"name": "input", "data": ["Hello!"]}]}'
 ```
 
 ## Model Storage Locations
