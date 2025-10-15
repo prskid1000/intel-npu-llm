@@ -1,6 +1,6 @@
-# OpenVINO NPU Model Optimization
+# OpenVINO GenAI API Server
 
-This project provides tools for converting and optimizing Large Language Models (LLMs) for Intel NPU using OpenVINO.
+A comprehensive OpenAI-compatible API server for running AI models on Intel NPU, CPU, and GPU using OpenVINO. Supports text generation, vision, audio processing, and RAG (Retrieval Augmented Generation).
 
 ## Prerequisites
 
@@ -45,12 +45,70 @@ print("Available devices:", devices)
 
 ## Model Conversion
 
-Use any of the following commands to convert models to OpenVINO format with INT4 quantization:
+Convert models from HuggingFace to OpenVINO format for optimal performance.
 
-### Qwen 2.5-3B
+### Text Models (LLM)
 
+**Qwen 2.5-3B**
 ```bash
-optimum-cli export openvino -m Qwen/Qwen2.5-3B --weight-format int4 --sym --ratio 1.0 --group-size 128 models/Qwen/Qwen2.5-3B
+optimum-cli export openvino -m Qwen/Qwen2.5-3B \
+  --weight-format int4 --sym --ratio 1.0 --group-size 128 \
+  models/Qwen/Qwen2.5-3B
+```
+
+**Other LLMs**
+```bash
+# Llama models
+optimum-cli export openvino -m meta-llama/Llama-3.2-3B \
+  --weight-format int4 \
+  models/Llama-3.2-3B
+
+# Phi models
+optimum-cli export openvino -m microsoft/Phi-3-mini-4k-instruct \
+  --weight-format int4 \
+  models/Phi-3-mini
+```
+
+### Vision Models (VLM)
+
+**MiniCPM-V**
+```bash
+pip install timm einops
+
+optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 \
+  --trust-remote-code --weight-format int4 \
+  models/MiniCPM-V-2_6
+```
+
+**InternVL2**
+```bash
+pip install timm einops
+
+optimum-cli export openvino -m OpenGVLab/InternVL2-1B \
+  --trust-remote-code --weight-format int4 \
+  models/InternVL2-1B
+```
+
+### Audio Models
+
+**Whisper (Speech-to-Text)**
+```bash
+# Whisper base
+optimum-cli export openvino --model openai/whisper-base \
+  models/whisper-base
+
+# Whisper base with quantization
+optimum-cli export openvino --model openai/whisper-base \
+  --disable-stateful --quant-mode int8 \
+  --dataset librispeech --num-samples 32 \
+  models/whisper-base-int8
+```
+
+**SpeechT5 (Text-to-Speech)**
+```bash
+optimum-cli export openvino --model microsoft/speecht5_tts \
+  --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" \
+  models/speecht5_tts
 ```
 
 ## Pre-converted Models
@@ -132,17 +190,30 @@ result = pipe.generate("Tell me a story", config)
 print(result)
 ```
 
-## Option 2: OpenAI-Compatible API Server (⭐ Recommended for NPU)
+## Option 2: OpenAI-Compatible API Server (⭐ Recommended)
 
-A production-ready FastAPI server that provides OpenAI-compatible endpoints with full NPU support.
+A production-ready FastAPI server that provides comprehensive OpenAI-compatible endpoints with full NPU support.
 
 ### Features
 
+#### 🎯 Core Capabilities
 ✅ **OpenAI API Compatible** - Drop-in replacement for OpenAI API  
-✅ **NPU Acceleration** - Full NPU support (unlike OVMS)  
-✅ **Multi-Model Support** - Serve multiple models simultaneously  
-✅ **Streaming** - Real-time token streaming  
-✅ **Easy Integration** - Works with OpenAI client libraries  
+✅ **NPU Acceleration** - Full NPU support for Intel Core Ultra processors  
+✅ **Multi-Model Support** - Serve multiple models simultaneously on different devices  
+✅ **Streaming** - Real-time token streaming for all text generation
+
+#### 🤖 AI Capabilities
+✅ **Text Generation** - LLM chat and completion endpoints  
+✅ **Vision (Multimodal)** - Process images with vision-language models  
+✅ **Speech-to-Text** - Whisper-based audio transcription  
+✅ **Text-to-Speech** - Generate natural-sounding speech  
+✅ **RAG Support** - File upload and document processing for context
+
+#### 📁 File & Document Processing
+✅ **File Upload API** - OpenAI-compatible file management  
+✅ **Document Extraction** - Support for PDF, DOCX, TXT, JSON  
+✅ **Image Processing** - Load from URLs, base64, or file uploads  
+✅ **Audio Processing** - WAV, MP3, FLAC, and more  
 
 ### Quick Start
 
@@ -156,31 +227,63 @@ pip install -r requirements.txt
 {
   "host": "0.0.0.0",
   "port": 8000,
+  "upload_dir": "uploads",
+  "vector_store_dir": "vector_store",
   "models": [
     {
       "name": "qwen2.5-3b",
-      "path": "models/Qwen/Qwen2.5-3B/1",
-      "device": "NPU"
+      "path": "models/Qwen/Qwen2.5-3B",
+      "device": "NPU",
+      "type": "llm"
+    },
+    {
+      "name": "minicpm-v",
+      "path": "models/MiniCPM-V-2_6",
+      "device": "CPU",
+      "type": "vlm"
+    },
+    {
+      "name": "whisper-base",
+      "path": "models/whisper-base",
+      "device": "CPU",
+      "type": "whisper"
+    },
+    {
+      "name": "speecht5-tts",
+      "path": "models/speecht5_tts",
+      "device": "CPU",
+      "type": "tts"
     }
   ]
 }
 ```
 
+**Model Types:**
+- `llm` - Large Language Models (text generation)
+- `vlm` - Vision-Language Models (multimodal)
+- `whisper` - Speech-to-text models
+- `tts` - Text-to-speech models
+- `embedding` - Embedding models (future support)
+
 **3. Start Server:**
 ```powershell
-python server.py
+python npu.py
 ```
 
 The server will start at `http://localhost:8000`
 
 ### API Endpoints
 
-#### List Models
+The server provides OpenAI-compatible endpoints organized by capability:
+
+#### 📝 Text Generation
+
+**List Models**
 ```bash
 curl http://localhost:8000/v1/models
 ```
 
-#### Chat Completions
+**Chat Completions**
 ```bash
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -193,7 +296,7 @@ curl http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-#### Streaming Chat
+**Streaming Chat**
 ```bash
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -204,7 +307,7 @@ curl http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-#### Text Completions
+**Text Completions**
 ```bash
 curl http://localhost:8000/v1/completions \
   -H "Content-Type: application/json" \
@@ -215,9 +318,127 @@ curl http://localhost:8000/v1/completions \
   }'
 ```
 
+#### 👁️ Vision (Multimodal)
+
+**Vision Chat with Image URL**
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "minicpm-v",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "What is in this image?"},
+          {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+        ]
+      }
+    ]
+  }'
+```
+
+**Vision Chat with Base64 Image**
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "minicpm-v",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "Describe this image"},
+          {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQ..."}}
+        ]
+      }
+    ]
+  }'
+```
+
+#### 📁 File Management
+
+**Upload File**
+```bash
+curl http://localhost:8000/v1/files \
+  -F "file=@document.pdf" \
+  -F "purpose=assistants"
+```
+
+**List Files**
+```bash
+curl http://localhost:8000/v1/files
+```
+
+**Get File Info**
+```bash
+curl http://localhost:8000/v1/files/file-abc123
+```
+
+**Download File Content**
+```bash
+curl http://localhost:8000/v1/files/file-abc123/content
+```
+
+**Delete File**
+```bash
+curl -X DELETE http://localhost:8000/v1/files/file-abc123
+```
+
+#### 🔊 Audio Processing
+
+**Speech-to-Text (Transcription)**
+```bash
+curl http://localhost:8000/v1/audio/transcriptions \
+  -F "file=@audio.mp3" \
+  -F "model=whisper-base" \
+  -F "response_format=json"
+```
+
+**Text-to-Speech**
+```bash
+curl http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "speecht5-tts",
+    "input": "Hello, this is a test of text to speech.",
+    "voice": "alloy",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+
+#### 🔍 RAG (Retrieval Augmented Generation)
+
+**Chat with Uploaded Document**
+```bash
+# First, upload a document
+FILE_ID=$(curl http://localhost:8000/v1/files \
+  -F "file=@document.pdf" \
+  -F "purpose=assistants" | jq -r '.id')
+
+# Then reference it in chat
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-3b",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "Summarize this document"},
+          {"type": "image_url", "image_url": {"url": "'$FILE_ID'"}}
+        ]
+      }
+    ]
+  }'
+```
+
 ### Client Examples
 
 #### Python (OpenAI Library)
+
+**Basic Text Chat**
 ```python
 from openai import OpenAI
 
@@ -246,6 +467,138 @@ stream = client.chat.completions.create(
 for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")
+```
+
+**Vision (Multimodal)**
+```python
+import base64
+
+# Encode image to base64
+with open("image.jpg", "rb") as f:
+    image_b64 = base64.b64encode(f.read()).decode()
+
+# Vision chat
+response = client.chat.completions.create(
+    model="minicpm-v",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_b64}"
+                    }
+                }
+            ]
+        }
+    ]
+)
+print(response.choices[0].message.content)
+```
+
+**File Upload & RAG**
+```python
+# Upload a document
+with open("document.pdf", "rb") as f:
+    file = client.files.create(file=f, purpose="assistants")
+
+print(f"Uploaded: {file.id}")
+
+# Use document in chat for RAG
+response = client.chat.completions.create(
+    model="qwen2.5-3b",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Summarize this document"},
+                {"type": "image_url", "image_url": {"url": file.id}}
+            ]
+        }
+    ]
+)
+print(response.choices[0].message.content)
+
+# List all files
+files = client.files.list()
+for f in files.data:
+    print(f"{f.filename}: {f.id}")
+
+# Delete file
+client.files.delete(file.id)
+```
+
+**Audio - Speech-to-Text**
+```python
+# Transcribe audio
+with open("audio.mp3", "rb") as f:
+    transcription = client.audio.transcriptions.create(
+        model="whisper-base",
+        file=f,
+        response_format="json"
+    )
+
+print(transcription.text)
+```
+
+**Audio - Text-to-Speech**
+```python
+# Generate speech
+response = client.audio.speech.create(
+    model="speecht5-tts",
+    input="Hello! This is a test of text to speech.",
+    voice="alloy",
+    response_format="mp3"
+)
+
+# Save to file
+response.stream_to_file("output.mp3")
+```
+
+**Complete Multimodal Pipeline**
+```python
+# 1. Generate voice note from text
+voice_response = client.audio.speech.create(
+    model="speecht5-tts",
+    input="What is machine learning?",
+    response_format="wav"
+)
+voice_response.stream_to_file("question.wav")
+
+# 2. Transcribe voice note
+with open("question.wav", "rb") as f:
+    transcription = client.audio.transcriptions.create(
+        model="whisper-base",
+        file=f
+    )
+
+# 3. Upload an image for context
+with open("ml_diagram.png", "rb") as f:
+    img_file = client.files.create(file=f, purpose="vision")
+
+# 4. Ask question with image context
+response = client.chat.completions.create(
+    model="minicpm-v",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": transcription.text},
+                {"type": "image_url", "image_url": {"url": img_file.id}}
+            ]
+        }
+    ]
+)
+
+# 5. Convert answer to speech
+answer_audio = client.audio.speech.create(
+    model="speecht5-tts",
+    input=response.choices[0].message.content,
+    response_format="mp3"
+)
+answer_audio.stream_to_file("answer.mp3")
 ```
 
 #### JavaScript/TypeScript
@@ -357,6 +710,40 @@ response = client.chat.completions.create(
 )
 ```
 
+### Example Scripts
+
+The repository includes ready-to-use example scripts:
+
+**`npu_test.py`** - Basic OpenAI client examples
+```bash
+python npu_test.py
+```
+
+**`multimodal_example.py`** - File upload, RAG, and multimodal examples
+```bash
+python multimodal_example.py
+```
+
+**`audio_example.py`** - Speech-to-text and text-to-speech examples
+```bash
+python audio_example.py
+```
+
+## Supported File Formats
+
+### Documents (RAG)
+- **Text**: `.txt`, `.json`
+- **PDF**: `.pdf` (requires `PyPDF2`)
+- **Word**: `.doc`, `.docx` (requires `python-docx`)
+
+### Images (Vision)
+- **Formats**: `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.webp`
+- **Input**: URLs, base64 data URI, file uploads, or local paths
+
+### Audio
+- **Input**: `.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`
+- **Output**: `.wav`, `.mp3`, `.flac`, `.aac`, `.opus`, `.pcm`
+
 ## Model Storage Locations
 
 ### HuggingFace Cache (Downloaded Models)
@@ -371,9 +758,45 @@ To check your cache:
 huggingface-cli scan-cache
 ```
 
+## Troubleshooting
+
+### NPU Not Detected
+- Ensure Intel NPU Driver is installed: [Download Link](https://www.intel.com/content/www/us/en/download/794734/intel-npu-driver-windows.html)
+- Verify processor has NPU (Intel Core Ultra Series 1 or 2)
+- Check device availability:
+  ```python
+  import openvino as ov
+  print(ov.Core().available_devices())
+  ```
+
+### Audio Processing Issues
+- Install audio dependencies:
+  ```bash
+  pip install librosa soundfile pydub
+  ```
+- For format conversion, ensure FFmpeg is installed
+
+### Vision Model Issues
+- Install vision dependencies:
+  ```bash
+  pip install timm einops
+  ```
+- Use `--trust-remote-code` when converting VLMs
+
+### File Upload Issues
+- Check `upload_dir` permissions in `config.json`
+- Ensure sufficient disk space
+- For large files, consider increasing server timeout
+
 ## Resources
 
 - [OpenVINO GenAI Repository](https://github.com/openvinotoolkit/openvino.genai)
 - [OpenVINO GenAI Documentation](https://openvinotoolkit.github.io/openvino.genai/)
 - [Optimum Intel Documentation](https://huggingface.co/docs/optimum/intel/index)
 - [List of Supported Models](https://github.com/openvinotoolkit/openvino.genai#supported-models)
+- [OpenVINO Whisper Examples](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python)
+- [Intel NPU Documentation](https://docs.openvino.ai/latest/openvino_docs_OV_UG_supported_plugins_NPU.html)
+
+## License
+
+This project uses OpenVINO GenAI which is licensed under Apache 2.0.
