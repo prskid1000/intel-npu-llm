@@ -21,8 +21,8 @@ Before running models on NPU, ensure you have the latest Intel NPU Driver instal
 ### 1. Create Virtual Environment
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
 ### 2. Install Dependencies
