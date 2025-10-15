@@ -1,6 +1,17 @@
+# Model conversion and optimization
 hf_xet
 huggingface_hub[hf_xet]
-openvino-genai
 git+https://github.com/huggingface/optimum-intel.git
 nncf
+
+# OpenVINO GenAI
+openvino-genai
+
+# API Server
+fastapi
+uvicorn[standard]
 pydantic
+python-multipart
+
+# Client (for examples)
+openai
