@@ -63,7 +63,7 @@ You can also use pre-optimized models from the OpenVINO collection:
 
 You can run inference in two ways:
 1. **Python API** - Direct inference using OpenVINO GenAI
-2. **Inference Server** - Production-ready server using OpenVINO Model Server (OVMS)
+2. **OpenAI-Compatible Server** - Production-ready server with NPU support (⭐ **Recommended**)
 
 ## Option 1: Python API (OpenVINO GenAI)
 
@@ -132,75 +132,229 @@ result = pipe.generate("Tell me a story", config)
 print(result)
 ```
 
-## Option 2: Inference Server (OpenVINO Model Server)
+## Option 2: OpenAI-Compatible API Server (⭐ Recommended for NPU)
 
-For production deployments, use OpenVINO Model Server (OVMS) to serve your models via REST/gRPC APIs.
+A production-ready FastAPI server that provides OpenAI-compatible endpoints with full NPU support.
 
-### Setup Environment
+### Features
 
-First, set up the OVMS environment which will activate your virtual environment and add OVMS to your PATH:
+✅ **OpenAI API Compatible** - Drop-in replacement for OpenAI API  
+✅ **NPU Acceleration** - Full NPU support (unlike OVMS)  
+✅ **Multi-Model Support** - Serve multiple models simultaneously  
+✅ **Streaming** - Real-time token streaming  
+✅ **Easy Integration** - Works with OpenAI client libraries  
 
-**PowerShell** (use dot-sourcing to run in current session):
+### Quick Start
+
+**1. Install Dependencies:**
 ```powershell
-. .\ovms\setupvars.ps1
+pip install -r requirements.txt
 ```
 
-**Command Prompt:**
-```batch
-.\ovms\setupvars.bat
-```
-
-> **Note:** In PowerShell, the dot (`.`) before the script path is important - it ensures the script runs in your current session so environment changes persist.
-
-This script will:
-- ✅ Activate your `.venv` virtual environment
-- ✅ Add OVMS binaries and DLLs to your PATH
-- ✅ Configure the environment for running the model server
-
-### Start the Model Server
-
-After running the setup script, you can start the server:
-
-```powershell
-ovms --model_path models/Qwen/Qwen2.5-3B --model_name qwen --port 9000
-```
-
-### Server Options
-
-```powershell
-# Specify NPU device
-ovms --model_path models/Qwen/Qwen2.5-3B --model_name qwen --port 9000 --target_device NPU
-
-# Enable logging
-ovms --model_path models/Qwen/Qwen2.5-3B --model_name qwen --port 9000 --log_level DEBUG
-
-# Serve multiple models with config file
-ovms --config_path config.json --port 9000
-```
-
-### Client Usage
-
-Once the server is running, you can make inference requests:
-
-**Python Client:**
-```python
-import requests
-
-url = "http://localhost:9000/v2/models/qwen/infer"
-payload = {
-    "inputs": [{"name": "input", "data": ["What is OpenVINO?"]}],
-    "parameters": {"max_new_tokens": 100}
+**2. Configure Models (config.json):**
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "models": [
+    {
+      "name": "qwen2.5-3b",
+      "path": "models/Qwen/Qwen2.5-3B/1",
+      "device": "NPU"
+    }
+  ]
 }
-
-response = requests.post(url, json=payload)
-print(response.json())
 ```
 
-**cURL:**
+**3. Start Server:**
+```powershell
+python server.py
+```
+
+The server will start at `http://localhost:8000`
+
+### API Endpoints
+
+#### List Models
 ```bash
-curl -X POST http://localhost:9000/v2/models/qwen/infer \
+curl http://localhost:8000/v1/models
+```
+
+#### Chat Completions
+```bash
+curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"inputs": [{"name": "input", "data": ["Hello!"]}]}'
+  -d '{
+    "model": "qwen2.5-3b",
+    "messages": [
+      {"role": "user", "content": "What is OpenVINO?"}
+    ],
+    "max_tokens": 100
+  }'
+```
+
+#### Streaming Chat
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-3b",
+    "messages": [{"role": "user", "content": "Count to 10"}],
+    "stream": true
+  }'
+```
+
+#### Text Completions
+```bash
+curl http://localhost:8000/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-3b",
+    "prompt": "The future of AI is",
+    "max_tokens": 50
+  }'
+```
+
+### Client Examples
+
+#### Python (OpenAI Library)
+```python
+from openai import OpenAI
+
+# Point to your local server
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="dummy"  # API key not required but library needs it
+)
+
+# Chat completion
+response = client.chat.completions.create(
+    model="qwen2.5-3b",
+    messages=[
+        {"role": "user", "content": "Explain quantum computing"}
+    ],
+    max_tokens=200
+)
+print(response.choices[0].message.content)
+
+# Streaming
+stream = client.chat.completions.create(
+    model="qwen2.5-3b",
+    messages=[{"role": "user", "content": "Write a poem"}],
+    stream=True
+)
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+```
+
+#### JavaScript/TypeScript
+```javascript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:8000/v1',
+  apiKey: 'dummy'
+});
+
+const response = await client.chat.completions.create({
+  model: 'qwen2.5-3b',
+  messages: [
+    { role: 'user', content: 'Hello!' }
+  ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+#### cURL
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-3b",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What is the capital of France?"}
+    ],
+    "temperature": 0.7,
+    "max_tokens": 100
+  }'
+```
+
+### Multi-Model Configuration
+
+Serve multiple models on different devices:
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "models": [
+    {
+      "name": "qwen2.5-3b-npu",
+      "path": "models/Qwen/Qwen2.5-3B/1",
+      "device": "NPU"
+    },
+    {
+      "name": "qwen2.5-7b-cpu",
+      "path": "models/Qwen/Qwen2.5-7B/1",
+      "device": "CPU"
+    },
+    {
+      "name": "llama-3.2-gpu",
+      "path": "models/Llama-3.2-3B/1",
+      "device": "GPU"
+    }
+  ]
+}
+```
+
+Then use different models in your requests:
+```python
+# Use NPU model
+response = client.chat.completions.create(
+    model="qwen2.5-3b-npu",
+    messages=[...]
+)
+
+# Use CPU model
+response = client.chat.completions.create(
+    model="qwen2.5-7b-cpu",
+    messages=[...]
+)
+```
+
+### Production Deployment
+
+#### Using Uvicorn Directly
+```powershell
+uvicorn server:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+#### Docker (Future)
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["python", "server.py"]
+```
+
+### Advanced Configuration
+
+#### Generation Parameters
+```python
+response = client.chat.completions.create(
+    model="qwen2.5-3b",
+    messages=[{"role": "user", "content": "Tell me a story"}],
+    temperature=0.8,      # Creativity (0.0-2.0)
+    top_p=0.95,          # Nucleus sampling
+    max_tokens=500,      # Maximum response length
+    presence_penalty=0,  # Penalize repeated topics
+    frequency_penalty=0  # Penalize repeated words
+)
 ```
 
 ## Model Storage Locations
