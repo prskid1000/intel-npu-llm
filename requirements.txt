@@ -3,3 +3,4 @@ huggingface_hub[hf_xet]
 openvino-genai
 git+https://github.com/huggingface/optimum-intel.git
 nncf
+pydantic
