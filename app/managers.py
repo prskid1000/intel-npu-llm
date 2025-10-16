@@ -67,9 +67,18 @@ class ModelManager:
                 
                 elif model_config.type == "text2image":
                     try:
-                        pipeline = ov_genai.Text2ImagePipeline(model_config.path, model_config.device)
+                        # Use optimum.intel.OVPipelineForText2Image instead of ov_genai.Text2ImagePipeline
+                        # to avoid dtype compatibility issues with tokenizers
+                        from optimum.intel import OVStableDiffusionPipeline
+                        pipeline = OVStableDiffusionPipeline.from_pretrained(
+                            model_config.path,
+                            device=model_config.device,
+                            compile=True
+                        )
                         self.text2image_pipelines[model_config.name] = pipeline
-                    except AttributeError:
+                    except Exception as e:
+                        print(f"⚠️  Warning: Could not load Text2Image pipeline: {e}")
+                        print(f"   Trying fallback method...")
                         core = ov.Core()
                         model_path = Path(model_config.path) / "openvino_model.xml"
                         model = core.read_model(model=str(model_path))

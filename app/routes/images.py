@@ -65,28 +65,32 @@ async def create_image(request: ImageGenerationRequest) -> ImageResponse:
         
         for i in range(request.n):
             try:
-                if hasattr(pipeline, 'generate'):
+                # OVStableDiffusionPipeline uses __call__ method and returns PIL images
+                if hasattr(pipeline, '__call__') and hasattr(pipeline, 'scheduler'):
+                    # This is optimum.intel OVStableDiffusionPipeline
+                    result = pipeline(
+                        prompt=request.prompt,
+                        height=height,
+                        width=width,
+                        num_inference_steps=20,
+                        num_images_per_prompt=1
+                    )
+                    # Result is a dict with 'images' key containing PIL Image list
+                    image = result.images[0] if hasattr(result, 'images') else result['images'][0]
+                elif hasattr(pipeline, 'generate'):
+                    # Fallback for ov_genai.Text2ImagePipeline
                     result = pipeline.generate(request.prompt, width=width, height=height)
                     image_array = result.image if hasattr(result, 'image') else result
+                    if isinstance(image_array, np.ndarray):
+                        if image_array.dtype in [np.float32, np.float64]:
+                            image_array = (image_array * 255).astype(np.uint8)
+                        if len(image_array.shape) == 3 and image_array.shape[0] in [1, 3, 4]:
+                            image_array = np.transpose(image_array, (1, 2, 0))
+                        image = Image.fromarray(image_array)
+                    else:
+                        image = Image.fromarray(np.array(image_array))
                 else:
-                    input_data = {"prompt": request.prompt}
-                    result = pipeline.infer_new_request(input_data)
-                    image_array = None
-                    for output in result.values():
-                        image_array = output
-                        break
-                
-                if image_array is None:
-                    raise ValueError("Could not generate image")
-                
-                if isinstance(image_array, np.ndarray):
-                    if image_array.dtype in [np.float32, np.float64]:
-                        image_array = (image_array * 255).astype(np.uint8)
-                    if len(image_array.shape) == 3 and image_array.shape[0] in [1, 3, 4]:
-                        image_array = np.transpose(image_array, (1, 2, 0))
-                    image = Image.fromarray(image_array)
-                else:
-                    image = Image.fromarray(np.array(image_array))
+                    raise ValueError("Unsupported pipeline type")
                 
                 if image.size != (width, height):
                     image = image.resize((width, height), Image.Resampling.LANCZOS)
@@ -176,20 +180,32 @@ async def create_image_edit(
         images_data = []
         
         for i in range(n):
-            if hasattr(pipeline, 'generate'):
+            # OVStableDiffusionPipeline uses __call__ method
+            if hasattr(pipeline, '__call__') and hasattr(pipeline, 'scheduler'):
+                # This is optimum.intel OVStableDiffusionPipeline
+                result = pipeline(
+                    prompt=prompt,
+                    height=height,
+                    width=width,
+                    num_inference_steps=20,
+                    num_images_per_prompt=1
+                )
+                result_image = result.images[0] if hasattr(result, 'images') else result['images'][0]
+            elif hasattr(pipeline, 'generate'):
+                # Fallback for ov_genai.Text2ImagePipeline
                 result = pipeline.generate(prompt, width=width, height=height)
                 image_array = result.image if hasattr(result, 'image') else result
+                if isinstance(image_array, np.ndarray):
+                    if image_array.dtype in [np.float32, np.float64]:
+                        image_array = (image_array * 255).astype(np.uint8)
+                    if len(image_array.shape) == 3 and image_array.shape[0] in [1, 3, 4]:
+                        image_array = np.transpose(image_array, (1, 2, 0))
+                    result_image = Image.fromarray(image_array)
+                else:
+                    result_image = Image.fromarray(np.array(image_array))
             else:
-                image_array = np.array(base_image.resize((width, height)))
-            
-            if isinstance(image_array, np.ndarray):
-                if image_array.dtype in [np.float32, np.float64]:
-                    image_array = (image_array * 255).astype(np.uint8)
-                if len(image_array.shape) == 3 and image_array.shape[0] in [1, 3, 4]:
-                    image_array = np.transpose(image_array, (1, 2, 0))
-                result_image = Image.fromarray(image_array)
-            else:
-                result_image = Image.fromarray(np.array(image_array))
+                # Last resort: just use the resized base image
+                result_image = base_image.resize((width, height))
             
             if response_format == "b64_json":
                 import base64
