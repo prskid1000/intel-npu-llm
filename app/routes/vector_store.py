@@ -45,13 +45,34 @@ async def add_document_to_vector_store(request: VectorStoreRequest):
         )
     
     try:
-        tokens = len(request.text.split())
-        input_ids = np.array([[1] * min(tokens, 512)])
-        result = pipeline.infer_new_request({"input_ids": input_ids})
+        # Properly tokenize using transformers
+        from transformers import AutoTokenizer
+        model_config = model_manager.model_configs.get(request.embedding_model)
+        if not model_config:
+            raise ValueError(f"Model config for '{request.embedding_model}' not found")
+        
+        tokenizer = AutoTokenizer.from_pretrained(model_config.path)
+        encoded = tokenizer(request.text, padding=True, truncation=True, max_length=512, return_tensors="np")
+        
+        result = pipeline.infer_new_request(dict(encoded))
         
         embedding = None
         for output in result.values():
-            embedding = output.flatten().tolist()
+            # Apply mean pooling for sentence transformers (BGE model)
+            if len(output.shape) == 3:
+                attention_mask = encoded.get('attention_mask', None)
+                if attention_mask is not None:
+                    # Masked mean pooling
+                    attention_mask_expanded = np.expand_dims(attention_mask, -1)
+                    sum_embeddings = np.sum(output * attention_mask_expanded, axis=1)
+                    sum_mask = np.clip(attention_mask_expanded.sum(axis=1), a_min=1e-9, a_max=None)
+                    embedding = (sum_embeddings / sum_mask)[0].tolist()
+                else:
+                    # Simple mean pooling
+                    embedding = output.mean(axis=1)[0].tolist()
+            else:
+                # Fallback: use output as-is
+                embedding = output.flatten().tolist()
             break
         
         if embedding is None:
@@ -96,13 +117,34 @@ async def search_vector_store(request: VectorSearchRequest):
         )
     
     try:
-        tokens = len(request.query.split())
-        input_ids = np.array([[1] * min(tokens, 512)])
-        result = pipeline.infer_new_request({"input_ids": input_ids})
+        # Properly tokenize using transformers
+        from transformers import AutoTokenizer
+        model_config = model_manager.model_configs.get(request.embedding_model)
+        if not model_config:
+            raise ValueError(f"Model config for '{request.embedding_model}' not found")
+        
+        tokenizer = AutoTokenizer.from_pretrained(model_config.path)
+        encoded = tokenizer(request.query, padding=True, truncation=True, max_length=512, return_tensors="np")
+        
+        result = pipeline.infer_new_request(dict(encoded))
         
         query_embedding = None
         for output in result.values():
-            query_embedding = output.flatten().tolist()
+            # Apply mean pooling for sentence transformers (BGE model)
+            if len(output.shape) == 3:
+                attention_mask = encoded.get('attention_mask', None)
+                if attention_mask is not None:
+                    # Masked mean pooling
+                    attention_mask_expanded = np.expand_dims(attention_mask, -1)
+                    sum_embeddings = np.sum(output * attention_mask_expanded, axis=1)
+                    sum_mask = np.clip(attention_mask_expanded.sum(axis=1), a_min=1e-9, a_max=None)
+                    query_embedding = (sum_embeddings / sum_mask)[0].tolist()
+                else:
+                    # Simple mean pooling
+                    query_embedding = output.mean(axis=1)[0].tolist()
+            else:
+                # Fallback: use output as-is
+                query_embedding = output.flatten().tolist()
             break
         
         if query_embedding is None:

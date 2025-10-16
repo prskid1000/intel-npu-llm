@@ -39,18 +39,43 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     embeddings_data = []
     total_tokens = 0
     
+    # Load tokenizer once outside the loop
+    from transformers import AutoTokenizer
+    model_config = model_manager.model_configs.get(request.model)
+    if not model_config:
+        raise HTTPException(status_code=404, detail=f"Model config for '{request.model}' not found")
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_config.path)
+    
     for idx, text in enumerate(inputs):
         try:
-            tokens = len(text.split())
+            # Tokenize
+            encoded = tokenizer(text, padding=True, truncation=True, max_length=512, return_tensors="np")
+            tokens = len(encoded['input_ids'][0])
             total_tokens += tokens
             
-            # Generate embedding
-            input_ids = np.array([[1] * min(tokens, 512)])
-            result = pipeline.infer_new_request({"input_ids": input_ids})
+            # Generate embedding using the properly tokenized inputs
+            result = pipeline.infer_new_request(dict(encoded))
             
             embedding = None
             for output in result.values():
-                embedding = output.flatten().tolist()
+                # Apply mean pooling for sentence transformers (BGE model)
+                # Output shape is typically (batch_size, seq_length, hidden_size)
+                if len(output.shape) == 3:
+                    # Mean pooling: average across sequence dimension
+                    attention_mask = encoded.get('attention_mask', None)
+                    if attention_mask is not None:
+                        # Masked mean pooling
+                        attention_mask_expanded = np.expand_dims(attention_mask, -1)
+                        sum_embeddings = np.sum(output * attention_mask_expanded, axis=1)
+                        sum_mask = np.clip(attention_mask_expanded.sum(axis=1), a_min=1e-9, a_max=None)
+                        embedding = (sum_embeddings / sum_mask)[0].tolist()
+                    else:
+                        # Simple mean pooling
+                        embedding = output.mean(axis=1)[0].tolist()
+                else:
+                    # Fallback: use output as-is (e.g., if already pooled)
+                    embedding = output.flatten().tolist()
                 break
             
             if embedding is None:

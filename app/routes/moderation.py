@@ -53,10 +53,21 @@ async def create_moderation(request: ModerationRequest) -> ModerationResponse:
     inputs = [request.input] if isinstance(request.input, str) else request.input
     results = []
     
+    # Load tokenizer for proper input processing
+    from transformers import AutoTokenizer
+    model_config = model_manager.model_configs.get(model_name)
+    if not model_config:
+        raise HTTPException(status_code=404, detail=f"Model config for '{model_name}' not found")
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_config.path)
+    
     for text in inputs:
         try:
-            input_data = {"text": text}
-            result = pipeline.infer_new_request(input_data)
+            # Tokenize the text
+            encoded = tokenizer(text, padding=True, truncation=True, max_length=512, return_tensors="np")
+            
+            # Infer with tokenized inputs
+            result = pipeline.infer_new_request(dict(encoded))
             
             categories = ModerationCategories()
             category_scores = ModerationCategoryScores()

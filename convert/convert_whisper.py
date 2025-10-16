@@ -69,6 +69,32 @@ def convert_whisper():
         print("✓ Model converted successfully")
         print()
         
+        # Add detokenizer for OpenVINO GenAI
+        try:
+            print("Converting tokenizer and detokenizer to OpenVINO format...")
+            from transformers import AutoTokenizer
+            from openvino_tokenizers import convert_tokenizer
+            import openvino as ov
+            
+            tokenizer = AutoTokenizer.from_pretrained(model_id)
+            
+            # Create tokenizer
+            ov_tokenizer = convert_tokenizer(tokenizer)
+            tokenizer_path = out_dir / "openvino_tokenizer.xml"
+            ov.save_model(ov_tokenizer, str(tokenizer_path))
+            print("✓ OpenVINO tokenizer created")
+            
+            # Create detokenizer - convert_tokenizer with with_detokenizer=True returns (tokenizer, detokenizer)
+            ov_tokenizer_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
+            detokenizer_path = out_dir / "openvino_detokenizer.xml"
+            ov.save_model(ov_tokenizer_detokenizer[1], str(detokenizer_path))
+            print("✓ OpenVINO detokenizer created")
+            print()
+        except Exception as e:
+            print(f"⚠️  Warning: Could not create detokenizer: {e}")
+            print("   Model may work without it for some use cases")
+            print()
+        
     except Exception as e:
         print(f"❌ ERROR during conversion: {e}")
         return False

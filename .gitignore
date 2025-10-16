@@ -4,6 +4,12 @@
 # Models directory
 models/
 
+uploads/
+
+vector_store/
+
+generated_images/
+
 # HuggingFace cache
 .cache/
 

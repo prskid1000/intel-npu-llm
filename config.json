@@ -37,7 +37,7 @@
       "path": "models/Text2Image/sd-1.5",
       "device": "GPU",
       "type": "text2image",
-      "description": "Stable Diffusion 1.5 - GPU inference"
+      "description": "Stable Diffusion 1.5 - CPU inference"
     },
     {
       "name": "moderation-model",

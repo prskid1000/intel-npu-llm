@@ -51,11 +51,13 @@ def convert_embeddings():
     print()
     
     try:
-        # Convert model
+        # Convert model with dynamic shapes for flexible batch sizes
         model = OVModelForFeatureExtraction.from_pretrained(
             model_id,
             export=True,
             compile=False,
+            # Enable dynamic shapes to handle variable input sizes
+            dynamic_shapes=True,
         )
         
         # Save tokenizer
@@ -65,8 +67,25 @@ def convert_embeddings():
         model.save_pretrained(out_dir)
         tokenizer.save_pretrained(out_dir)
         
-        print("✓ Model converted successfully")
+        print("✓ Model converted successfully with dynamic shapes")
         print()
+        
+        # Add OpenVINO tokenizer for better compatibility
+        try:
+            print("Converting tokenizer to OpenVINO format...")
+            from openvino_tokenizers import convert_tokenizer
+            import openvino as ov
+            
+            # Create OpenVINO tokenizer
+            ov_tokenizer = convert_tokenizer(tokenizer)
+            tokenizer_path = out_dir / "openvino_tokenizer.xml"
+            ov.save_model(ov_tokenizer, str(tokenizer_path))
+            print("✓ OpenVINO tokenizer created (openvino_tokenizer.xml/.bin)")
+            print()
+        except Exception as e:
+            print(f"⚠️  Warning: Could not create OpenVINO tokenizer: {e}")
+            print("   Model will still work with standard tokenizer")
+            print()
         
     except Exception as e:
         print(f"❌ ERROR during conversion: {e}")

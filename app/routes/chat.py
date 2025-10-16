@@ -76,7 +76,8 @@ async def chat_completions(request: ChatCompletionRequest):
     if request.stop:
         stop_strings = [request.stop] if isinstance(request.stop, str) else request.stop
         try:
-            config.stop_strings = stop_strings
+            # OpenVINO GenAI expects a set, not a list
+            config.stop_strings = set(stop_strings)
         except AttributeError:
             pass
     
