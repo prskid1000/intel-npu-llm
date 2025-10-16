@@ -108,7 +108,7 @@ async def add_document_to_vector_store(request: VectorStoreRequest):
 async def search_vector_store(request: VectorSearchRequest):
     """Search the vector store for similar documents"""
     
-    print(f"🔍 VectorStore Search: query_len={len(request.query)}, k={request.k}")
+    print(f"🔍 VectorStore Search: query_len={len(request.query)}, k={request.top_k}")
     
     if not vector_store:
         raise HTTPException(status_code=500, detail="Vector store not initialized")

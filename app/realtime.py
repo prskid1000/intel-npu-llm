@@ -479,3 +479,64 @@ async def realtime_endpoint(websocket: WebSocket, model: str, model_manager, ses
         except:
             pass
 
+
+# ============================================================================
+# Session Management REST API Endpoints
+# ============================================================================
+
+async def list_sessions(session_manager: SessionManager) -> Dict[str, Any]:
+    """List all active sessions"""
+    sessions = []
+    for session_id, session in session_manager.sessions.items():
+        sessions.append({
+            "id": session_id,
+            "model": session.model_name,
+            "created_at": session.created_at.isoformat() if hasattr(session.created_at, 'isoformat') else str(session.created_at),
+            "conversation_items": len(session.conversation_history),
+            "audio_buffer_size": len(session.audio_buffer)
+        })
+    
+    return {
+        "object": "list",
+        "sessions": sessions
+    }
+
+
+async def get_session(session_id: str, session_manager: SessionManager) -> Dict[str, Any]:
+    """Get details of a specific session"""
+    session = session_manager.get_session(session_id)
+    if not session:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    return {
+        "id": session.session_id,
+        "object": "realtime.session",
+        "model": session.model_name,
+        "created_at": session.created_at,
+        "modalities": ["text", "audio"],
+        "instructions": "",
+        "voice": "alloy",
+        "input_audio_format": "pcm16",
+        "output_audio_format": "pcm16",
+        "turn_detection": None,
+        "tools": session.tools or [],
+        "conversation_items": len(session.conversation_history),
+        "audio_buffer_size": len(session.audio_buffer)
+    }
+
+
+async def delete_session(session_id: str, session_manager: SessionManager) -> Dict[str, Any]:
+    """Delete a session"""
+    session = session_manager.get_session(session_id)
+    if not session:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    
+    session_manager.delete_session(session_id)
+    
+    return {
+        "id": session_id,
+        "object": "realtime.session.deleted",
+        "deleted": True
+    }

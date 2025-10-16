@@ -248,3 +248,22 @@ async def realtime_websocket(websocket: WebSocket, model: str = "qwen2.5-3b"):
     await realtime.realtime_endpoint(websocket, model, model_manager, session_manager)
 
 
+# Session Management REST API
+@app.get("/v1/realtime/sessions")
+async def list_realtime_sessions():
+    """List all active realtime sessions"""
+    return await realtime.list_sessions(session_manager)
+
+
+@app.get("/v1/realtime/sessions/{session_id}")
+async def get_realtime_session(session_id: str):
+    """Get details of a specific realtime session"""
+    return await realtime.get_session(session_id, session_manager)
+
+
+@app.delete("/v1/realtime/sessions/{session_id}")
+async def delete_realtime_session(session_id: str):
+    """Delete a realtime session"""
+    return await realtime.delete_session(session_id, session_manager)
+
+
