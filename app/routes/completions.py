@@ -10,8 +10,9 @@ import asyncio
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from typing import TYPE_CHECKING
-
+import openvino as ov
 import openvino_genai as ov_genai
+
 
 from ..models import CompletionRequest, CompletionResponse, CompletionChoice, Usage
 
@@ -32,6 +33,7 @@ async def completions(request: CompletionRequest):
     """Create text completion (OpenAI-compatible)"""
     
     pipeline = model_manager.get_pipeline(request.model)
+    model_type = model_manager.get_model_type(request.model)
     prompt = request.prompt if isinstance(request.prompt, str) else request.prompt[0]
     
     config = ov_genai.GenerationConfig()
@@ -40,32 +42,47 @@ async def completions(request: CompletionRequest):
     config.top_p = request.top_p
     config.do_sample = request.temperature > 0
     
-    if request.stream:
+    # Generate response
+    if model_type == "vlm":
+        # VLM text-only mode - use dummy image for NPU compatibility
+        import numpy as np
+        
+        # Create a small 224x224 black image (minimal memory footprint)
+        dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
+        dummy_tensor = ov.Tensor(dummy_image)
+        
+        # Pass dummy image to satisfy NPU requirement
+        result = pipeline.generate(prompt, image=dummy_tensor, max_new_tokens=config.max_new_tokens)
+        response_text = result if isinstance(result, str) else result.texts[0]
+    elif request.stream:
+        # LLM streaming mode
         return StreamingResponse(
             stream_completion(pipeline, prompt, request, config),
             media_type="text/event-stream"
         )
     else:
+        # LLM non-streaming mode
         response_text = pipeline.generate(prompt, config)
-        
-        prompt_tokens = len(prompt.split())
-        completion_tokens = len(response_text.split())
-        
-        return CompletionResponse(
-            id=f"cmpl-{uuid.uuid4().hex[:8]}",
-            created=int(time.time()),
-            model=request.model,
-            choices=[CompletionChoice(
-                index=0,
-                text=response_text,
-                finish_reason="stop"
-            )],
-            usage=Usage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens
-            )
+    
+    # Build response (for non-streaming)
+    prompt_tokens = len(prompt.split())
+    completion_tokens = len(response_text.split())
+    
+    return CompletionResponse(
+        id=f"cmpl-{uuid.uuid4().hex[:8]}",
+        created=int(time.time()),
+        model=request.model,
+        choices=[CompletionChoice(
+            index=0,
+            text=response_text,
+            finish_reason="stop"
+        )],
+        usage=Usage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens
         )
+    )
 
 
 async def stream_completion(

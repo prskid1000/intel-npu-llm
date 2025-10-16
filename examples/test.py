@@ -40,7 +40,7 @@ def test_basic_chat():
     print("="*70)
     
     response = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=[
             {"role": "system", "content": "You are a helpful AI assistant."},
             {"role": "user", "content": "What is OpenVINO in one sentence?"}
@@ -66,7 +66,7 @@ def test_streaming():
     print("Assistant: ", end="", flush=True)
     
     stream = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=[
             {"role": "user", "content": "Count from 1 to 5, one number per line"}
         ],
@@ -88,7 +88,7 @@ def test_text_completion():
     print("="*70)
     
     response = client.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         prompt="The three laws of robotics are:",
         max_tokens=100,
         temperature=0.7
@@ -112,7 +112,7 @@ def test_multi_turn_conversation():
     
     # First turn
     response1 = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=messages,
         max_tokens=50
     )
@@ -125,7 +125,7 @@ def test_multi_turn_conversation():
     messages.append({"role": "user", "content": "What's my name?"})
     
     response2 = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=messages,
         max_tokens=30
     )
@@ -189,7 +189,7 @@ def test_tool_calling():
     ]
     
     response = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=[
             {"role": "user", "content": "What's the weather in Paris and also calculate 15 * 7?"}
         ],
@@ -245,7 +245,7 @@ def test_tool_calling_with_execution():
     
     # First call - model decides to use tool
     response1 = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=messages,
         tools=tools,
         max_tokens=150
@@ -286,7 +286,7 @@ def test_tool_calling_with_execution():
         
         # Second call - model uses tool result
         response2 = client.chat.completions.create(
-            model="qwen2.5-3b",
+            model="phi-3.5-vision",
             messages=messages,
             tools=tools,
             max_tokens=100
@@ -311,7 +311,7 @@ def test_json_mode():
     print("="*70)
     
     response = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=[
             {
                 "role": "system",
@@ -361,7 +361,7 @@ def test_json_schema():
     }
     
     response = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=[
             {
                 "role": "user",
@@ -426,7 +426,7 @@ Intel Core Ultra processors, delivering high-performance, power-efficient AI inf
     
     # Ask question about the document
     response = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=[
             {
                 "role": "user",
@@ -699,7 +699,7 @@ def test_seed_reproducibility():
     
     # Generate twice with same seed
     response1 = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=prompt_messages,
         seed=12345,
         temperature=0.7,
@@ -707,7 +707,7 @@ def test_seed_reproducibility():
     )
     
     response2 = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=prompt_messages,
         seed=12345,
         temperature=0.7,
@@ -733,7 +733,7 @@ def test_stop_sequences():
     print("="*70)
     
     response = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=[
             {"role": "user", "content": "List the days of the week"}
         ],
@@ -758,7 +758,7 @@ def test_system_fingerprint():
     print("="*70)
     
     response = client.chat.completions.create(
-        model="qwen2.5-3b",
+        model="phi-3.5-vision",
         messages=[
             {"role": "user", "content": "Hello!"}
         ],
@@ -789,7 +789,7 @@ def test_voice_chat_rest_api():
         import tempfile
         
         WHISPER_MODEL = "whisper-base"
-        LLM_MODEL = "qwen2.5-3b"
+        LLM_MODEL = "phi-3.5-vision"
         TTS_MODEL = "speecht5-tts"
         SAMPLE_RATE = 16000
         DURATION = 3  # seconds for test
@@ -896,7 +896,7 @@ def test_voice_chat_realtime_websocket():
         import websockets
         
         async def test_realtime():
-            WS_URL = "ws://localhost:8000/v1/realtime?model=qwen2.5-3b"
+            WS_URL = "ws://localhost:8000/v1/realtime?model=phi-3.5-vision"
             
             print("🔌 Connecting to WebSocket...")
             

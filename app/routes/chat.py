@@ -7,6 +7,7 @@ import time
 import uuid
 import json
 import asyncio
+import numpy as np
 from typing import Union, List, Dict, Any, Optional, TYPE_CHECKING
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -134,7 +135,8 @@ async def chat_completions(request: ChatCompletionRequest):
     
     # Generate response
     if request.stream:
-        if model_type == "vlm" and images:
+        if model_type == "vlm":
+            # VLM doesn't support streaming well, fall back to non-streaming
             return await chat_completions_non_streaming(
                 pipeline, model_type, prompt, images, request, config,
                 use_tools, use_json_mode, json_schema
@@ -165,14 +167,23 @@ async def chat_completions_non_streaming(
     """Non-streaming chat completion handler"""
     
     try:
-        if model_type == "vlm" and images:
-            image_tensor = images[0] if images else None
-            if image_tensor is not None:
+        if model_type == "vlm":
+            if images:
+                # VLM with images
+                image_tensor = images[0]
                 result = pipeline.generate(prompt, image=image_tensor, max_new_tokens=config.max_new_tokens)
                 response_text = result if isinstance(result, str) else result.texts[0]
             else:
-                response_text = pipeline.generate(prompt, config)
+                # VLM text-only mode - create dummy image for NPU compatibility
+                # Create a small 224x224 black image (minimal memory footprint)
+                dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
+                dummy_tensor = ov.Tensor(dummy_image)
+                
+                # Pass dummy image to satisfy NPU requirement
+                result = pipeline.generate(prompt, image=dummy_tensor, max_new_tokens=config.max_new_tokens)
+                response_text = result if isinstance(result, str) else result.texts[0]
         else:
+            # LLM mode
             response_text = pipeline.generate(prompt, config)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")

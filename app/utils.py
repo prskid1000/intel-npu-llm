@@ -276,22 +276,17 @@ def load_image_from_url(url: str, file_storage=None) -> ov.Tensor:
 
 
 def extract_content_parts(messages: List[ChatMessage], file_storage=None) -> Tuple[str, List[ov.Tensor], List[str]]:
-    """Extract text, images, and file references from messages"""
+    """Extract text, images, and file references from messages - VLM format with Phi-3 chat template"""
     text_parts = []
     images = []
     file_ids = []
     
     for msg in messages:
-        role_prefix = ""
-        if msg.role == "system":
-            role_prefix = "System: "
-        elif msg.role == "user":
-            role_prefix = "User: "
-        elif msg.role == "assistant":
-            role_prefix = "Assistant: "
+        # Use Phi-3 chat template format: <|role|>\ncontent<|end|>\n
+        role = msg.role
         
         if isinstance(msg.content, str):
-            text_parts.append(f"{role_prefix}{msg.content}\n\n")
+            text_parts.append(f"<|{role}|>\n{msg.content}<|end|>\n")
         
         elif isinstance(msg.content, list):
             msg_text = []
@@ -302,7 +297,7 @@ def extract_content_parts(messages: List[ChatMessage], file_storage=None) -> Tup
                     try:
                         img_tensor = load_image_from_url(part.image_url.url, file_storage)
                         images.append(img_tensor)
-                        msg_text.append("[Image attached]")
+                        msg_text.append("<image>")  # Phi-3 Vision image placeholder
                         
                         if part.image_url.url.startswith('file-'):
                             file_ids.append(part.image_url.url)
@@ -310,9 +305,11 @@ def extract_content_parts(messages: List[ChatMessage], file_storage=None) -> Tup
                         msg_text.append(f"[Image load error: {e}]")
             
             if msg_text:
-                text_parts.append(f"{role_prefix}{' '.join(msg_text)}\n\n")
+                content = ' '.join(msg_text)
+                text_parts.append(f"<|{role}|>\n{content}<|end|>\n")
     
-    text_parts.append("Assistant: ")
+    # Add assistant prompt to continue generation
+    text_parts.append("<|assistant|>\n")
     full_prompt = "".join(text_parts)
     
     return full_prompt, images, file_ids

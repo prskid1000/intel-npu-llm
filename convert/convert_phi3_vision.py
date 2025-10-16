@@ -47,7 +47,7 @@ def convert_phi3_vision():
         return False
     
     # Step 1: Load and convert base model
-    print("[1/2] Converting base model to OpenVINO FP16...")
+    print("[1/3] Converting base model to OpenVINO FP16...")
     print("      This may take several minutes...")
     print()
     
@@ -80,8 +80,70 @@ def convert_phi3_vision():
         print(f"❌ ERROR during base conversion: {e}")
         return False
     
+    # Step 1.5: Download tokenizer and processor files + convert to OpenVINO
+    print("[1.5/3] Setting up tokenizer and processor...")
+    print()
+    
+    try:
+        from transformers import AutoTokenizer, AutoProcessor
+        from openvino_tokenizers import convert_tokenizer
+        import json
+        
+        # Download and save tokenizer
+        print("   Downloading tokenizer...")
+        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        tokenizer.save_pretrained(out_dir)
+        
+        # Download and save processor (includes image processor)
+        try:
+            processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+            processor.save_pretrained(out_dir)
+        except Exception as e:
+            print(f"   Note: Could not save processor: {e}")
+        
+        print("   ✓ HuggingFace tokenizer files saved")
+        
+        # Add chat template if missing
+        tokenizer_config_path = out_dir / "tokenizer_config.json"
+        if tokenizer_config_path.exists():
+            with open(tokenizer_config_path, 'r', encoding='utf-8') as f:
+                tokenizer_config = json.load(f)
+            
+            if 'chat_template' not in tokenizer_config:
+                print("   Adding chat template...")
+                tokenizer_config['chat_template'] = "{% for message in messages %}{{'<|' + message['role'] + '|>' + '\\n' + message['content'] + '<|end|>\\n' }}{% endfor %}{% if add_generation_prompt and messages[-1]['role'] != 'assistant' %}{{- '<|assistant|>\\n' -}}{% endif %}"
+                
+                with open(tokenizer_config_path, 'w', encoding='utf-8') as f:
+                    json.dump(tokenizer_config, f, indent=2, ensure_ascii=False)
+                print("   ✓ Chat template added")
+        
+        # Convert tokenizer and detokenizer to OpenVINO format
+        print("   Converting tokenizer to OpenVINO format...")
+        import openvino as ov
+        
+        # Create tokenizer
+        ov_tokenizer = convert_tokenizer(tokenizer)
+        tokenizer_path = out_dir / "openvino_tokenizer.xml"
+        ov.save_model(ov_tokenizer, str(tokenizer_path))
+        print("   ✓ OpenVINO tokenizer created (openvino_tokenizer.xml/.bin)")
+        
+        # Create detokenizer
+        print("   Converting detokenizer to OpenVINO format...")
+        # convert_tokenizer with with_detokenizer=True returns a tuple (tokenizer, detokenizer)
+        ov_tokenizer_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
+        detokenizer_path = out_dir / "openvino_detokenizer.xml"
+        # Extract the detokenizer (second element of the tuple)
+        ov.save_model(ov_tokenizer_detokenizer[1], str(detokenizer_path))
+        print("   ✓ OpenVINO detokenizer created (openvino_detokenizer.xml/.bin)")
+        print()
+        
+    except Exception as e:
+        print(f"⚠️  Warning: Could not setup tokenizer: {e}")
+        print("   The model may not work properly without tokenizer files")
+        print()
+    
     # Step 2: Apply INT4 quantization
-    print("[2/2] Applying INT4 quantization...")
+    print("[2/3] Applying INT4 quantization...")
     print("      This optimizes the model for NPU inference")
     print()
     
