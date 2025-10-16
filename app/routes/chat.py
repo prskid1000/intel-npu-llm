@@ -57,6 +57,9 @@ def set_dependencies(mm, fs, dp):
 async def chat_completions(request: ChatCompletionRequest):
     """Create chat completion (OpenAI-compatible) with multimodal, tool calling, and structured output support"""
     
+    # Log request
+    print(f"📨 Chat: model={request.model}, msgs={len(request.messages)}, stream={request.stream}, modalities={request.modalities}")
+    
     pipeline = model_manager.get_pipeline(request.model)
     model_type = model_manager.get_model_type(request.model)
     
@@ -169,17 +172,9 @@ async def chat_completions_non_streaming(
 ) -> ChatCompletionResponse:
     """Non-streaming chat completion handler"""
     
-    # Reset VLM conversation history to prevent state accumulation
-    if model_type == "vlm":
-        try:
-            # VLMPipeline may have start_chat() method to reset history
-            if hasattr(pipeline, 'start_chat'):
-                pipeline.start_chat()
-            elif hasattr(pipeline, 'reset'):
-                pipeline.reset()
-        except Exception as e:
-            # If reset fails, continue anyway (non-critical)
-            print(f"⚠️  VLM reset warning: {e}")
+    # VLM history management: Reload on error
+    # When VLM accumulates too much history, it throws:
+    # "Check 'prompt_ids.get_size() >= tokenized_history.size()' failed"
     
     try:
         if model_type == "vlm":
@@ -201,7 +196,33 @@ async def chat_completions_non_streaming(
             # LLM mode
             response_text = pipeline.generate(prompt, config)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+        error_msg = str(e)
+        # Check if it's the VLM history accumulation error
+        if model_type == "vlm" and ("prompt_ids.get_size() >= tokenized_history.size()" in error_msg or 
+                                     "Prompt ids size is less than tokenized history size" in error_msg):
+            print(f"⚠️  VLM history error detected, reloading pipeline...")
+            # Get model manager to reload the VLM
+            from ..main import model_manager
+            if model_manager and model_manager.reload_vlm_pipeline(request.model):
+                # Retry after reload
+                print(f"🔄 Retrying generation after VLM reload...")
+                pipeline = model_manager.get_pipeline(request.model)
+                try:
+                    if images:
+                        image_tensor = images[0]
+                        result = pipeline.generate(prompt, image=image_tensor, max_new_tokens=config.max_new_tokens)
+                        response_text = result if isinstance(result, str) else result.texts[0]
+                    else:
+                        dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
+                        dummy_tensor = ov.Tensor(dummy_image)
+                        result = pipeline.generate(prompt, image=dummy_tensor, max_new_tokens=config.max_new_tokens)
+                        response_text = result if isinstance(result, str) else result.texts[0]
+                except Exception as retry_error:
+                    raise HTTPException(status_code=500, detail=f"Generation failed after reload: {str(retry_error)}")
+            else:
+                raise HTTPException(status_code=500, detail=f"VLM reload failed: {error_msg}")
+        else:
+            raise HTTPException(status_code=500, detail=f"Generation failed: {error_msg}")
     
     # Parse response
     tool_calls = None

@@ -35,6 +35,8 @@ def set_model_manager(manager):
 async def create_image(request: ImageGenerationRequest) -> ImageResponse:
     """Generate images from text prompts (OpenAI-compatible)"""
     
+    print(f"🎨 Image Gen: prompt='{request.prompt[:50]}...', n={request.n}, size={request.size}")
+    
     model_name = request.model if request.model else None
     if not model_name:
         text2image_models = list(model_manager.text2image_pipelines.keys())
@@ -140,6 +142,8 @@ async def create_image_edit(
 ):
     """Edit images (OpenAI-compatible DALL·E edit endpoint)"""
     
+    print(f"✏️ Image Edit: prompt='{prompt[:50]}...', n={n}, size={size}")
+    
     if not model:
         text2image_models = list(model_manager.text2image_pipelines.keys())
         if not text2image_models:
@@ -241,6 +245,8 @@ async def create_image_variation(
     response_format: str = Form("url")
 ):
     """Create variations of an image (OpenAI-compatible)"""
+    
+    print(f"🔄 Image Variations: n={n}, size={size}")
     
     if not model:
         text2image_models = list(model_manager.text2image_pipelines.keys())

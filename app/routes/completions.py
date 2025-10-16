@@ -32,6 +32,8 @@ def set_model_manager(manager):
 async def completions(request: CompletionRequest):
     """Create text completion (OpenAI-compatible)"""
     
+    print(f"📝 Completion: model={request.model}, prompt_len={len(request.prompt)}, max_tokens={request.max_tokens}")
+    
     pipeline = model_manager.get_pipeline(request.model)
     model_type = model_manager.get_model_type(request.model)
     prompt = request.prompt if isinstance(request.prompt, str) else request.prompt[0]

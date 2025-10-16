@@ -31,6 +31,9 @@ def set_model_manager(manager):
 async def create_moderation(request: ModerationRequest) -> ModerationResponse:
     """Moderate text content (OpenAI-compatible)"""
     
+    inputs_count = 1 if isinstance(request.input, str) else len(request.input)
+    print(f"🛡️ Moderation: inputs={inputs_count}")
+    
     model_name = request.model if request.model else None
     if not model_name:
         moderation_models = list(model_manager.moderation_pipelines.keys())

@@ -38,6 +38,8 @@ async def create_transcription(
 ):
     """Transcribe audio to text using Whisper (OpenAI-compatible)"""
     
+    print(f"🎤 STT: model={model}, file={file.filename}")
+    
     pipeline = model_manager.get_pipeline(model)
     model_type = model_manager.get_model_type(model)
     
@@ -91,6 +93,8 @@ async def create_transcription(
 @router.post("/v1/audio/speech")
 async def create_speech(request: AudioSpeechRequest):
     """Generate speech from text using TTS (OpenAI-compatible)"""
+    
+    print(f"🔊 TTS: model={request.model}, text_len={len(request.input)}")
     
     pipeline = model_manager.get_pipeline(request.model)
     model_type = model_manager.get_model_type(request.model)

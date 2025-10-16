@@ -32,6 +32,9 @@ def set_dependencies(mm, vs):
 @router.post("/v1/vector_store/documents")
 async def add_document_to_vector_store(request: VectorStoreRequest):
     """Add a document to the vector store with its embedding"""
+    
+    print(f"📚 VectorStore Add: text_len={len(request.text)}, metadata={bool(request.metadata)}")
+    
     if not vector_store:
         raise HTTPException(status_code=500, detail="Vector store not initialized")
     
@@ -104,6 +107,9 @@ async def add_document_to_vector_store(request: VectorStoreRequest):
 @router.post("/v1/vector_store/search")
 async def search_vector_store(request: VectorSearchRequest):
     """Search the vector store for similar documents"""
+    
+    print(f"🔍 VectorStore Search: query_len={len(request.query)}, k={request.k}")
+    
     if not vector_store:
         raise HTTPException(status_code=500, detail="Vector store not initialized")
     

@@ -31,6 +31,9 @@ async def upload_file(
     purpose: str = Form("assistants")
 ) -> FileObject:
     """Upload a file (OpenAI-compatible)"""
+    
+    print(f"📁 File Upload: name={file.filename}, purpose={purpose}")
+    
     if not file_storage:
         raise HTTPException(status_code=500, detail="File storage not initialized")
     

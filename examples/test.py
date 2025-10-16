@@ -1369,102 +1369,10 @@ def test_logprobs():
     print("   Note: Full logprobs require deeper OpenVINO GenAI integration")
 
 
-def test_session_management():
-    """Test: Session management endpoints"""
-    print("\n" + "="*70)
-    print("TEST 29: Session Management")
-    print("="*70)
-    
-    import requests
-    
-    # Test 1: List sessions (initially empty or with existing sessions)
-    print("\n📋 Part 1: List all sessions")
-    response = requests.get("http://localhost:8000/v1/sessions")
-    
-    if response.status_code != 200:
-        raise Exception(f"List sessions failed: {response.status_code}")
-    
-    data = response.json()
-    print(f"   Active sessions: {len(data['sessions'])}")
-    print(f"   Stats:")
-    for key, value in data['stats'].items():
-        print(f"      {key}: {value}")
-    
-    # Test 2: Create a WebSocket session (simulate by checking if any exist)
-    print("\n🔄 Part 2: Session statistics")
-    stats = data['stats']
-    print(f"   Total sessions created: {stats.get('total_sessions_created', 0)}")
-    print(f"   Active sessions: {stats.get('active_sessions', 0)}")
-    print(f"   Expired sessions: {stats.get('expired_sessions', 0)}")
-    print(f"   Average messages/session: {stats.get('avg_messages_per_session', 0)}")
-    
-    # Test 3: Get specific session (if any exist)
-    if data['sessions']:
-        session_id = data['sessions'][0]['session_id']
-        print(f"\n🔍 Part 3: Get session details ({session_id})")
-        
-        response = requests.get(f"http://localhost:8000/v1/sessions/{session_id}")
-        
-        if response.status_code != 200:
-            raise Exception(f"Get session failed: {response.status_code}")
-        
-        session = response.json()
-        print(f"   Session ID: {session['session_id']}")
-        print(f"   Model: {session['model_name']}")
-        print(f"   Created: {session['created_at']}")
-        print(f"   Last activity: {session['last_activity']}")
-        print(f"   Message count: {session['message_count']}")
-        print(f"   Has WebSocket: {session.get('has_websocket', False)}")
-        
-        # Test 4: Delete session
-        print(f"\n🗑️  Part 4: Delete session ({session_id})")
-        
-        response = requests.delete(f"http://localhost:8000/v1/sessions/{session_id}")
-        
-        if response.status_code != 200:
-            print(f"   ⚠️  Delete failed (session may have expired): {response.status_code}")
-        else:
-            result = response.json()
-            print(f"   Deleted: {result['deleted']}")
-            print(f"   Session ID: {result['session_id']}")
-            
-            # Verify deletion
-            response = requests.get(f"http://localhost:8000/v1/sessions/{session_id}")
-            if response.status_code == 404:
-                print(f"   ✅ Verified: Session no longer exists")
-            else:
-                print(f"   ⚠️  Session still exists after deletion")
-    else:
-        print(f"\n⚠️  No active sessions to test detailed operations")
-        print(f"   Note: Sessions are created via WebSocket connections")
-    
-    # Test 5: Health check includes session stats
-    print("\n💊 Part 5: Health check with session stats")
-    response = requests.get("http://localhost:8000/health")
-    
-    if response.status_code != 200:
-        raise Exception(f"Health check failed: {response.status_code}")
-    
-    health = response.json()
-    if 'active_sessions' in health:
-        print(f"   Active sessions: {health['active_sessions']}")
-        print(f"   Total sessions: {health.get('total_sessions', 0)}")
-    else:
-        print(f"   ⚠️  Session stats not in health check (may not be initialized)")
-    
-    print("\n✅ Session management test completed!")
-    print("   Features tested:")
-    print("   - List sessions with statistics")
-    print("   - Get session details")
-    print("   - Delete sessions")
-    print("   - Health check integration")
-    print("\n   Note: To fully test, create WebSocket connections at /v1/realtime")
-
-
 def test_multimodal_audio_output():
     """Test: Multimodal chat with audio output (GPT-4o style)"""
     print("\n" + "="*70)
-    print("TEST 30: Multimodal Audio Output (GPT-4o Style)")
+    print("TEST 29: Multimodal Audio Output (GPT-4o Style)")
     print("="*70)
     print("\n🎯 This tests the 'modalities' parameter for audio output in chat completions")
     print("   Similar to OpenAI's GPT-4o-audio feature\n")
@@ -1499,8 +1407,6 @@ def test_multimodal_audio_output():
         
         # Optionally save the audio
         try:
-            import base64
-            from pathlib import Path
             audio_bytes = base64.b64decode(audio_data.data)
             output_path = Path("test_audio_output.wav")
             output_path.write_bytes(audio_bytes)
@@ -1619,7 +1525,7 @@ def main():
     print("=" * 70)
     print("COMPREHENSIVE FEATURE TEST - OpenVINO GenAI API Server")
     print("=" * 70)
-    print("\nThis test suite covers ALL 30 features:")
+    print("\nThis test suite covers ALL 29 features:")
     print("  • Basic chat and completions")
     print("  • Streaming")
     print("  • Tool/function calling")
@@ -1731,11 +1637,10 @@ def main():
         # Error handling (25)
         run_test(test_openai_error_format)
         
-        # New features (26-30) - NEWLY IMPLEMENTED!
+        # New features (26-29) - NEWLY IMPLEMENTED!
         run_test(test_model_retrieve)
         run_test(test_file_operations)
         run_test(test_logprobs)
-        run_test(test_session_management)
         run_test(test_multimodal_audio_output)
         
         # Summary

@@ -1,6 +1,6 @@
 """
 Session Manager for WebSocket Realtime API
-Handles in-memory session storage and lifecycle management
+Handles in-memory session storage and lifecycle management for WebSocket connections
 """
 
 import time

@@ -25,6 +25,10 @@ def set_model_manager(manager):
 async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     """Create embeddings for text (OpenAI-compatible)"""
     
+    # Log request
+    inputs_count = 1 if isinstance(request.input, str) else len(request.input)
+    print(f"📊 Embeddings: model={request.model}, inputs={inputs_count}")
+    
     pipeline = model_manager.get_pipeline(request.model)
     model_type = model_manager.get_model_type(request.model)
     

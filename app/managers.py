@@ -111,11 +111,49 @@ class ModelManager:
             
         print(f"✅ Loaded {total_models} model(s)")
         
+    def reload_vlm_pipeline(self, model_name: str) -> bool:
+        """Reload a VLM pipeline (workaround for NPU history accumulation)"""
+        if model_name not in self.model_configs:
+            return False
+        
+        model_config = self.model_configs[model_name]
+        if model_config.type != "vlm":
+            return False
+        
+        try:
+            if model_config.device == "NPU":
+                # NPU requires full pipeline reload (offload + reload)
+                print(f"🔄 NPU VLM: Offloading and reloading pipeline {model_name} (clearing history)")
+                # Delete old pipeline to free NPU memory
+                if model_name in self.vlm_pipelines:
+                    del self.vlm_pipelines[model_name]
+                    # Recreate pipeline from scratch
+                    pipeline = ov_genai.VLMPipeline(model_config.path, model_config.device)
+                    self.vlm_pipelines[model_name] = pipeline
+                    print(f"✅ NPU VLM reloaded successfully")
+            else:
+                # CPU/GPU can use finish_chat() to reset history
+                print(f"🔄 {model_config.device} VLM: Resetting conversation history for {model_name}")
+                pipeline = self.vlm_pipelines.get(model_name)
+                if pipeline and hasattr(pipeline, 'finish_chat'):
+                    pipeline.finish_chat()
+                    print(f"✅ Conversation history reset via finish_chat()")
+                elif pipeline and hasattr(pipeline, 'start_chat'):
+                    pipeline.start_chat()
+                    print(f"✅ Conversation history reset via start_chat()")
+                else:
+                    print(f"⚠️  No reset method available, continuing...")
+            return True
+        except Exception as e:
+            print(f"⚠️  Failed to reload VLM pipeline: {e}")
+            return False
+    
     def get_pipeline(self, model_name: str) -> Any:
         """Get a pipeline by model name"""
         if model_name in self.llm_pipelines:
             return self.llm_pipelines[model_name]
         elif model_name in self.vlm_pipelines:
+            # No proactive reload - let the error trigger the reload in chat.py
             return self.vlm_pipelines[model_name]
         elif model_name in self.whisper_pipelines:
             return self.whisper_pipelines[model_name]
