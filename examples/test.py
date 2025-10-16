@@ -1493,6 +1493,125 @@ def test_multimodal_audio_output():
 # Main Test Runner
 # ============================================================================
 
+def cleanup_temp_files():
+    """Clean up temporary files and data before tests"""
+    print("\n" + "="*70)
+    print("CLEANUP: Clearing temporary files and data")
+    print("="*70)
+    
+    import shutil
+    import glob
+    
+    cleaned_items = []
+    
+    # 1. Clear vector store
+    try:
+        vector_store_path = Path("vector_store/vector_index.json")
+        if vector_store_path.exists():
+            # Reset to empty vector store
+            vector_store_path.write_text(json.dumps({
+                "documents": [],
+                "embeddings": [],
+                "metadata": []
+            }, indent=2))
+            cleaned_items.append("Vector store documents")
+    except Exception as e:
+        print(f"⚠️  Could not clear vector store: {e}")
+    
+    # 2. Clear generated images
+    try:
+        generated_images_dir = Path("generated_images")
+        if generated_images_dir.exists():
+            image_files = list(generated_images_dir.glob("*.png"))
+            for img_file in image_files:
+                try:
+                    img_file.unlink()
+                except Exception:
+                    pass
+            if image_files:
+                cleaned_items.append(f"Generated images ({len(image_files)} files)")
+    except Exception as e:
+        print(f"⚠️  Could not clear generated images: {e}")
+    
+    # 3. Clear uploaded files
+    try:
+        uploads_dir = Path("uploads")
+        if uploads_dir.exists():
+            # Clear metadata
+            metadata_file = uploads_dir / "files_metadata.json"
+            if metadata_file.exists():
+                metadata_file.write_text(json.dumps({}, indent=2))
+            
+            # Remove uploaded files (but keep .gitkeep if exists)
+            file_count = 0
+            for upload_file in uploads_dir.iterdir():
+                if upload_file.name not in ["files_metadata.json", ".gitkeep"]:
+                    try:
+                        if upload_file.is_file():
+                            upload_file.unlink()
+                            file_count += 1
+                        elif upload_file.is_dir():
+                            shutil.rmtree(upload_file)
+                            file_count += 1
+                    except Exception:
+                        pass
+            
+            if file_count > 0:
+                cleaned_items.append(f"Uploaded files ({file_count} items)")
+    except Exception as e:
+        print(f"⚠️  Could not clear uploads: {e}")
+    
+    # 4. Clear any test files in root directory
+    try:
+        test_files = [
+            "test_document.txt",
+            "test_speech.wav",
+            "test_audio_output.wav",
+            "test_crud.txt"
+        ]
+        removed_count = 0
+        for test_file in test_files:
+            test_path = Path(test_file)
+            if test_path.exists():
+                try:
+                    test_path.unlink()
+                    removed_count += 1
+                except Exception:
+                    pass
+        
+        if removed_count > 0:
+            cleaned_items.append(f"Test files ({removed_count} files)")
+    except Exception as e:
+        print(f"⚠️  Could not clear test files: {e}")
+    
+    # 5. Clear session data via API (if server is running)
+    try:
+        import requests
+        # Try to clear any active sessions
+        response = requests.get("http://localhost:8000/v1/realtime/sessions", timeout=2)
+        if response.status_code == 200:
+            sessions = response.json().get("sessions", [])
+            for session in sessions:
+                try:
+                    requests.delete(f"http://localhost:8000/v1/realtime/sessions/{session['id']}", timeout=2)
+                except Exception:
+                    pass
+            if sessions:
+                cleaned_items.append(f"Active sessions ({len(sessions)} sessions)")
+    except Exception:
+        # Server might not be running yet, that's okay
+        pass
+    
+    if cleaned_items:
+        print("✅ Cleaned up:")
+        for item in cleaned_items:
+            print(f"   • {item}")
+    else:
+        print("✅ No temporary files to clean (already clean)")
+    
+    print("=" * 70)
+
+
 def run_health_check():
     """Check server health"""
     print("\n" + "="*70)
@@ -1544,6 +1663,9 @@ def main():
     print("  • Logprobs support 🆕")
     print("  • OpenAI error format compliance")
     print("=" * 70)
+    
+    # Clean up temporary files and data before starting tests
+    cleanup_temp_files()
     
     # Check server health
     if not run_health_check():

@@ -288,6 +288,7 @@ async def chat_completions_non_streaming(
     # Generate audio if modalities includes "audio" (GPT-4o style)
     if request.modalities and "audio" in request.modalities:
         from ..models import AudioData
+        from ..main import model_manager
         import base64
         
         tts_models = list(model_manager.tts_pipelines.keys())
