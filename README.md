@@ -66,14 +66,22 @@ Edit `config.json`:
 
 ## Converting Models
 
-Download pre-converted models or convert yourself:
-
+**Quick start - convert all models:**
 ```bash
-# Qwen 2.5-3B (optimized for NPU)
-optimum-cli export openvino -m Qwen/Qwen2.5-3B \
-  --weight-format int4 --sym --ratio 1.0 --group-size 128 \
-  models/Qwen/Qwen2.5-3B
+python convert_all_models.py
 ```
+
+**Or convert individual models:**
+```bash
+python convert_phi3_vision.py      # LLM + Vision (required)
+python convert_embeddings.py       # RAG/Vector store
+python convert_whisper.py          # Speech-to-text
+python convert_tts.py              # Text-to-speech
+python convert_text2image.py       # Image generation
+python convert_moderation.py       # Content safety
+```
+
+See [MODELS.md](MODELS.md) for detailed conversion guide.
 
 Pre-converted models: [NPU-Optimized Collection](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu-686e7f0bf7bc184bd71f8ba0)
 

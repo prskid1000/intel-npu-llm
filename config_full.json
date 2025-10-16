@@ -8,15 +8,8 @@
       "name": "phi-3.5-vision",
       "path": "models/Phi/Phi-3.5-vision-instruct",
       "device": "NPU",
-      "type": "llm",
-      "description": "Unified multimodal model - handles text chat, completions, and tool calling (4B params, 128K context)"
-    },
-    {
-      "name": "phi-3.5-vision-vlm",
-      "path": "models/Phi/Phi-3.5-vision-instruct",
-      "device": "NPU",
       "type": "vlm",
-      "description": "Same model as phi-3.5-vision but registered as VLM for vision tasks - image understanding, OCR, chart/table analysis, multi-image comparison"
+      "description": "Unified multimodal model - handles text chat, completions, tool calling, AND vision tasks (4B params, 128K context)"
     },
     {
       "name": "text-embedding-model",

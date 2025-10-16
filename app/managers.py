@@ -60,7 +60,8 @@ class ModelManager:
                 
                 elif model_config.type == "embedding":
                     core = ov.Core()
-                    model = core.read_model(model=model_config.path)
+                    model_path = Path(model_config.path) / "openvino_model.xml"
+                    model = core.read_model(model=str(model_path))
                     compiled_model = core.compile_model(model, model_config.device)
                     self.embedding_pipelines[model_config.name] = compiled_model
                 
@@ -70,13 +71,15 @@ class ModelManager:
                         self.text2image_pipelines[model_config.name] = pipeline
                     except AttributeError:
                         core = ov.Core()
-                        model = core.read_model(model=model_config.path)
+                        model_path = Path(model_config.path) / "openvino_model.xml"
+                        model = core.read_model(model=str(model_path))
                         compiled_model = core.compile_model(model, model_config.device)
                         self.text2image_pipelines[model_config.name] = compiled_model
                 
                 elif model_config.type == "moderation":
                     core = ov.Core()
-                    model = core.read_model(model=model_config.path)
+                    model_path = Path(model_config.path) / "openvino_model.xml"
+                    model = core.read_model(model=str(model_path))
                     compiled_model = core.compile_model(model, model_config.device)
                     self.moderation_pipelines[model_config.name] = compiled_model
                 

@@ -5,11 +5,46 @@
   "vector_store_dir": "vector_store",
   "models": [
     {
-      "name": "qwen2.5-3b",
-      "path": "models/Qwen/Qwen2.5-3B",
+      "name": "phi-3.5-vision",
+      "path": "models/Phi/Phi-3.5-vision-instruct",
       "device": "NPU",
-      "type": "llm"
+      "type": "vlm",
+      "description": "Unified multimodal model - handles text chat, completions, tool calling, AND vision tasks (4B params, 128K context)"
+    },
+    {
+      "name": "text-embedding-model",
+      "path": "models/Embeddings/bge-small-en",
+      "device": "CPU",
+      "type": "embedding",
+      "description": "Text embeddings for RAG and vector store"
+    },
+    {
+      "name": "whisper-base",
+      "path": "models/Whisper/whisper-base",
+      "device": "CPU",
+      "type": "whisper",
+      "description": "Speech-to-text transcription"
+    },
+    {
+      "name": "speecht5-tts",
+      "path": "models/TTS/speecht5-tts",
+      "device": "CPU",
+      "type": "tts",
+      "description": "Text-to-speech generation"
+    },
+    {
+      "name": "stable-diffusion",
+      "path": "models/Text2Image/sd-1.5",
+      "device": "GPU",
+      "type": "text2image",
+      "description": "Stable Diffusion 1.5 - GPU inference"
+    },
+    {
+      "name": "moderation-model",
+      "path": "models/Moderation/toxic-bert",
+      "device": "CPU",
+      "type": "moderation",
+      "description": "Content moderation and safety"
     }
   ]
 }
-
