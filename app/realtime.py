@@ -170,8 +170,9 @@ class RealtimeSession:
                             image_tensors.append(img_tensor)
                     else:
                         # Create dummy image tensor for text-only VLM (like chat.py)
-                        dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
+                        import numpy as np
                         import openvino as ov
+                        dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
                         dummy_tensor = ov.Tensor(dummy_image)
                         image_tensors = [dummy_tensor]
                     
