@@ -137,7 +137,9 @@ class RealtimeSession:
             
             response_text = ""
             
-            try:
+            # Helper function to generate with VLM or LLM
+            async def _generate_internal():
+                nonlocal response_text
                 # VLM models require images parameter
                 if model_type == "vlm":
                     import openvino as ov
@@ -167,36 +169,72 @@ class RealtimeSession:
                             img_tensor = ov.Tensor(img_array.transpose(2, 0, 1).astype(np.uint8))
                             image_tensors.append(img_tensor)
                     else:
-                        # Create empty image tensor for text-only
-                        empty_image = ov.Tensor(ov.Type.u8, [3, 224, 224])
-                        image_tensors = [empty_image]
+                        # Create dummy image tensor for text-only VLM (like chat.py)
+                        dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
+                        import openvino as ov
+                        dummy_tensor = ov.Tensor(dummy_image)
+                        image_tensors = [dummy_tensor]
                     
-                    response_text = pipeline.generate(prompt, image_tensors, config)
+                    # VLM doesn't support streaming well, use generate directly
+                    result = pipeline.generate(prompt, image=image_tensors[0], max_new_tokens=config.max_new_tokens)
+                    response_text = result if isinstance(result, str) else result.texts[0]
+                    
+                    # Send the full response as a delta
+                    await self.send_event("response.text.delta", {
+                        "response_id": response_id,
+                        "delta": response_text,
+                        "text": response_text
+                    })
                 else:
-                    # Regular LLM models
-                    for token in pipeline.generate(prompt, config, streamer=True):
-                        response_text += token
+                    # Regular LLM models - try streaming
+                    try:
+                        for token in pipeline.generate(prompt, config, streamer=True):
+                            response_text += token
+                            await self.send_event("response.text.delta", {
+                                "response_id": response_id,
+                                "delta": token,
+                                "text": response_text
+                            })
+                            await asyncio.sleep(0)
+                    except TypeError:
+                        # Fallback for models without streaming
+                        response_text = pipeline.generate(prompt, config)
                         await self.send_event("response.text.delta", {
                             "response_id": response_id,
-                            "delta": token,
+                            "delta": response_text,
                             "text": response_text
                         })
-                        await asyncio.sleep(0)
-                    
-            except TypeError:
-                # Fallback for models without streaming
-                if model_type == "vlm":
-                    import openvino as ov
-                    empty_image = ov.Tensor(ov.Type.u8, [3, 224, 224])
-                    response_text = pipeline.generate(prompt, [empty_image], config)
+            
+            # Try generation with VLM error handling
+            try:
+                await _generate_internal()
+            except Exception as e:
+                error_msg = str(e)
+                # Check if it's a VLM error that requires pipeline reload
+                vlm_reload_errors = [
+                    "prompt_ids.get_size() >= tokenized_history.size()",
+                    "Prompt ids size is less than tokenized history size",
+                    "MAX_PROMPT_LEN",
+                    "inputs_embeds.get__shape().at(1) <= m_max_prompt_len"
+                ]
+                if model_type == "vlm" and any(err_pattern in error_msg for err_pattern in vlm_reload_errors):
+                    print(f"⚠️  VLM error in WebSocket, reloading pipeline...")
+                    if self.model_manager.reload_vlm_pipeline(self.model_name):
+                        print(f"🔄 Retrying generation after VLM reload...")
+                        # Refresh pipeline reference
+                        pipeline = self.model_manager.get_pipeline(self.model_name)
+                        # Retry generation
+                        try:
+                            await _generate_internal()
+                        except Exception as retry_error:
+                            await self.send_error(f"Response generation failed after reload: {str(retry_error)}")
+                            return
+                    else:
+                        await self.send_error(f"VLM reload failed: {error_msg}")
+                        return
                 else:
-                    response_text = pipeline.generate(prompt, config)
-                    
-                await self.send_event("response.text.delta", {
-                    "response_id": response_id,
-                    "delta": response_text,
-                    "text": response_text
-                })
+                    # Not a VLM reload error, just raise it
+                    raise
             
             # Check for function calls if tools are available
             tool_calls = None

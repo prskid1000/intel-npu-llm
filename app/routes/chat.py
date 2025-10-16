@@ -197,10 +197,15 @@ async def chat_completions_non_streaming(
             response_text = pipeline.generate(prompt, config)
     except Exception as e:
         error_msg = str(e)
-        # Check if it's the VLM history accumulation error
-        if model_type == "vlm" and ("prompt_ids.get_size() >= tokenized_history.size()" in error_msg or 
-                                     "Prompt ids size is less than tokenized history size" in error_msg):
-            print(f"⚠️  VLM history error detected, reloading pipeline...")
+        # Check if it's a VLM error that requires pipeline reload
+        vlm_reload_errors = [
+            "prompt_ids.get_size() >= tokenized_history.size()",
+            "Prompt ids size is less than tokenized history size",
+            "MAX_PROMPT_LEN",  # NPU prompt length exceeded
+            "inputs_embeds.get__shape().at(1) <= m_max_prompt_len"  # NPU max prompt check
+        ]
+        if model_type == "vlm" and any(err_pattern in error_msg for err_pattern in vlm_reload_errors):
+            print(f"⚠️  VLM error detected, reloading pipeline with updated config...")
             # Get model manager to reload the VLM
             from ..main import model_manager
             if model_manager and model_manager.reload_vlm_pipeline(request.model):

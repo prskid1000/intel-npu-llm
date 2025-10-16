@@ -961,7 +961,7 @@ def test_voice_chat_rest_api():
                     response_format="json"
                 )
             
-            user_text = transcription.text or "[No speech detected]"
+            user_text = transcription.text[:100] or "[No speech detected]"
             print(f"👤 Transcribed: \"{user_text}\"")
             
             # Step 3: Get AI response (use test prompt if no speech)
