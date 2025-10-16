@@ -14,7 +14,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 import numpy as np
 
 from .models import ChatMessage
-from .utils import build_chat_prompt
+from .utils import build_chat_prompt, parse_tool_calls_from_response
+from .session_manager import Session, SessionManager
 
 if TYPE_CHECKING:
     from .managers import ModelManager
@@ -23,16 +24,21 @@ import openvino_genai as ov_genai
 
 
 class RealtimeSession:
-    """Manages a realtime voice/text conversation session"""
+    """
+    Wrapper for realtime session with model manager and WebSocket-specific methods
+    Extends the Session class with generation capabilities
+    """
     
-    def __init__(self, websocket: WebSocket, model_name: str, model_manager):
-        self.websocket = websocket
-        self.model_name = model_name
+    def __init__(self, session: Session, model_manager):
+        self.session = session
+        self.websocket = session.websocket
+        self.model_name = session.model_name
         self.model_manager = model_manager
-        self.session_id = f"sess_{uuid.uuid4().hex[:16]}"
-        self.conversation_history: List[Dict[str, Any]] = []
-        self.audio_buffer: List[bytes] = []
-        self.is_speaking = False
+        self.session_id = session.session_id
+        self.conversation_history = session.conversation_history
+        self.audio_buffer = session.audio_buffer
+        self.is_speaking = session.is_speaking
+        self.tools = session.tools
         
     async def send_event(self, event_type: str, data: Dict[str, Any]):
         """Send event to client"""
@@ -104,10 +110,11 @@ class RealtimeSession:
         except Exception as e:
             await self.send_error(f"Failed to process audio: {str(e)}")
     
-    async def generate_response(self, user_input: str):
-        """Generate and stream text/audio response"""
+    async def generate_response(self, user_input: str, images: list = None):
+        """Generate and stream text/audio response with optional image support"""
         try:
             pipeline = self.model_manager.get_pipeline(self.model_name)
+            model_type = self.model_manager.get_model_type(self.model_name)
             
             config = ov_genai.GenerationConfig()
             config.max_new_tokens = 512
@@ -117,7 +124,7 @@ class RealtimeSession:
             prompt = build_chat_prompt(
                 [ChatMessage(role=msg["role"], content=msg["content"]) 
                  for msg in self.conversation_history],
-                tools=None
+                tools=self.tools if self.tools else None
             )
             
             response_id = f"resp_{uuid.uuid4().hex[:12]}"
@@ -131,39 +138,125 @@ class RealtimeSession:
             response_text = ""
             
             try:
-                for token in pipeline.generate(prompt, config, streamer=True):
-                    response_text += token
-                    await self.send_event("response.text.delta", {
-                        "response_id": response_id,
-                        "delta": token,
-                        "text": response_text
-                    })
-                    await asyncio.sleep(0)
+                # VLM models require images parameter
+                if model_type == "vlm":
+                    import openvino as ov
+                    from PIL import Image
+                    import base64
+                    import io
+                    
+                    # Process images if provided
+                    image_tensors = []
+                    if images:
+                        for img_data in images:
+                            if img_data.startswith('data:image'):
+                                # Base64 encoded image
+                                img_data = img_data.split(',')[1]
+                                img_bytes = base64.b64decode(img_data)
+                                img = Image.open(io.BytesIO(img_bytes))
+                            else:
+                                # Assume it's a file path or URL
+                                img = Image.open(img_data)
+                            
+                            # Resize and convert to tensor
+                            img = img.resize((224, 224))
+                            import numpy as np
+                            img_array = np.array(img)
+                            if len(img_array.shape) == 2:
+                                img_array = np.stack([img_array] * 3, axis=2)
+                            img_tensor = ov.Tensor(img_array.transpose(2, 0, 1).astype(np.uint8))
+                            image_tensors.append(img_tensor)
+                    else:
+                        # Create empty image tensor for text-only
+                        empty_image = ov.Tensor(ov.Type.u8, [3, 224, 224])
+                        image_tensors = [empty_image]
+                    
+                    response_text = pipeline.generate(prompt, image_tensors, config)
+                else:
+                    # Regular LLM models
+                    for token in pipeline.generate(prompt, config, streamer=True):
+                        response_text += token
+                        await self.send_event("response.text.delta", {
+                            "response_id": response_id,
+                            "delta": token,
+                            "text": response_text
+                        })
+                        await asyncio.sleep(0)
                     
             except TypeError:
-                response_text = pipeline.generate(prompt, config)
+                # Fallback for models without streaming
+                if model_type == "vlm":
+                    import openvino as ov
+                    empty_image = ov.Tensor(ov.Type.u8, [3, 224, 224])
+                    response_text = pipeline.generate(prompt, [empty_image], config)
+                else:
+                    response_text = pipeline.generate(prompt, config)
+                    
                 await self.send_event("response.text.delta", {
                     "response_id": response_id,
                     "delta": response_text,
                     "text": response_text
                 })
             
+            # Check for function calls if tools are available
+            tool_calls = None
+            final_text = response_text
+            
+            if self.tools:
+                cleaned_text, parsed_tool_calls = parse_tool_calls_from_response(response_text)
+                if parsed_tool_calls:
+                    tool_calls = parsed_tool_calls
+                    final_text = cleaned_text
+                    
+                    # Send function call events
+                    for tool_call in tool_calls:
+                        await self.send_event("response.function_call_arguments.done", {
+                            "response_id": response_id,
+                            "call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments
+                        })
+            
             self.conversation_history.append({
                 "role": "assistant",
-                "content": response_text
+                "content": final_text,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    } for tc in tool_calls
+                ] if tool_calls else None
             })
+            
+            output = [{"type": "text", "text": final_text}]
+            if tool_calls:
+                output.append({
+                    "type": "function_calls",
+                    "function_calls": [
+                        {
+                            "call_id": tc.id,
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        } for tc in tool_calls
+                    ]
+                })
             
             await self.send_event("response.done", {
                 "response": {
                     "id": response_id,
                     "status": "completed",
-                    "output": [{"type": "text", "text": response_text}]
+                    "output": output
                 }
             })
             
-            tts_models = list(self.model_manager.tts_pipelines.keys())
-            if tts_models:
-                await self.generate_audio_response(response_text, response_id)
+            # Only generate audio if there's text and no function calls
+            if final_text and not tool_calls:
+                tts_models = list(self.model_manager.tts_pipelines.keys())
+                if tts_models:
+                    await self.generate_audio_response(final_text, response_id)
                 
         except Exception as e:
             await self.send_error(f"Response generation failed: {str(e)}")
@@ -205,11 +298,13 @@ class RealtimeSession:
             await self.send_error(f"Audio generation failed: {str(e)}")
 
 
-async def realtime_endpoint(websocket: WebSocket, model: str, model_manager):
+async def realtime_endpoint(websocket: WebSocket, model: str, model_manager, session_manager: SessionManager):
     """OpenAI-compatible Realtime API (WebSocket)"""
     await websocket.accept()
     
-    session = RealtimeSession(websocket, model, model_manager)
+    # Create session using SessionManager
+    base_session = session_manager.create_session(model, websocket)
+    session = RealtimeSession(base_session, model_manager)
     
     try:
         await session.send_event("session.created", {
@@ -237,18 +332,73 @@ async def realtime_endpoint(websocket: WebSocket, model: str, model_manager):
                     event = json.loads(data["text"])
                     event_type = event.get("type")
                     
-                    if event_type == "conversation.item.create":
+                    if event_type == "session.update":
+                        # Update session configuration (e.g., set tools)
+                        session_config = event.get("session", {})
+                        if "tools" in session_config:
+                            session.tools = session_config["tools"]
+                            await session.send_event("session.updated", {
+                                "session": {
+                                    "id": session.session_id,
+                                    "tools": session.tools
+                                }
+                            })
+                    
+                    elif event_type == "conversation.item.create":
                         item = event.get("item", {})
-                        content = item.get("content", [])
+                        item_type = item.get("type", "message")
                         
-                        for part in content:
-                            if part.get("type") == "input_text":
-                                text = part.get("text", "")
+                        # Handle function call results
+                        if item_type == "function_call_output":
+                            call_id = item.get("call_id")
+                            output = item.get("output", "")
+                            
+                            # Add function result to conversation
+                            session.conversation_history.append({
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": output
+                            })
+                            
+                            # Optionally continue the conversation automatically
+                            # await session.generate_response("")
+                            
+                            await session.send_event("conversation.item.created", {
+                                "item": {
+                                    "id": f"msg_{uuid.uuid4().hex[:12]}",
+                                    "type": "function_call_output",
+                                    "call_id": call_id,
+                                    "output": output
+                                }
+                            })
+                        else:
+                            # Regular message
+                            content = item.get("content", [])
+                            
+                            # Support multimodal input (text + images)
+                            text_parts = []
+                            image_parts = []
+                            
+                            for part in content:
+                                if part.get("type") == "input_text":
+                                    text_parts.append(part.get("text", ""))
+                                elif part.get("type") == "input_image":
+                                    # Extract image data (base64 or URL)
+                                    image_url = part.get("image_url", {})
+                                    if isinstance(image_url, dict):
+                                        url = image_url.get("url", "")
+                                    else:
+                                        url = image_url
+                                    if url:
+                                        image_parts.append(url)
+                            
+                            if text_parts:
+                                text = " ".join(text_parts)
                                 session.conversation_history.append({
                                     "role": "user",
                                     "content": text
                                 })
-                                await session.generate_response(text)
+                                await session.generate_response(text, images=image_parts)
                     
                     elif event_type == "input_audio_buffer.append":
                         audio_b64 = event.get("audio", "")
@@ -282,6 +432,9 @@ async def realtime_endpoint(websocket: WebSocket, model: str, model_manager):
         except:
             pass
     finally:
+        print(f"Session {session.session_id} ended")
+        # Keep session in memory for potential reconnection (will auto-expire after timeout)
+        # To delete immediately, uncomment: session_manager.delete_session(session.session_id)
         try:
             await websocket.close()
         except:

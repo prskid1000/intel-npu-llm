@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from .models import ServerConfig, ModelConfig
 from .managers import ModelManager, FileStorageManager, VectorStore
+from .session_manager import SessionManager
 from .utils import create_error_response
 
 # Import route modules
@@ -65,6 +66,7 @@ except FileNotFoundError:
 model_manager: Optional[ModelManager] = None
 file_storage: Optional[FileStorageManager] = None
 vector_store: Optional[VectorStore] = None
+session_manager: Optional[SessionManager] = None
 
 
 # ============================================================================
@@ -74,10 +76,14 @@ vector_store: Optional[VectorStore] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle"""
-    global model_manager, file_storage, vector_store
+    global model_manager, file_storage, vector_store, session_manager
     
     try:
         print("📋 Loaded configuration")
+        
+        # Initialize session manager
+        session_manager = SessionManager(timeout_minutes=30, cleanup_interval=300)
+        print(f"🔄 Session manager initialized (timeout: 30min)")
         
         # Initialize file storage
         file_storage = FileStorageManager(config.upload_dir)
@@ -239,5 +245,55 @@ async def health():
 @app.websocket("/v1/realtime")
 async def realtime_websocket(websocket: WebSocket, model: str = "qwen2.5-3b"):
     """WebSocket Realtime API endpoint"""
-    await realtime.realtime_endpoint(websocket, model, model_manager)
+    await realtime.realtime_endpoint(websocket, model, model_manager, session_manager)
+
+
+@app.get("/v1/sessions")
+async def list_sessions():
+    """List all active sessions (monitoring endpoint)"""
+    if not session_manager:
+        return {"sessions": [], "stats": {}}
+    
+    return {
+        "sessions": session_manager.list_sessions(active_only=True),
+        "stats": session_manager.get_stats()
+    }
+
+
+@app.get("/v1/sessions/{session_id}")
+async def get_session_info(session_id: str):
+    """Get information about a specific session"""
+    if not session_manager:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Session manager not initialized"}
+        )
+    
+    session = session_manager.get_session(session_id)
+    if not session:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Session '{session_id}' not found"}
+        )
+    
+    return session.to_dict()
+
+
+@app.delete("/v1/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a specific session"""
+    if not session_manager:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Session manager not initialized"}
+        )
+    
+    deleted = session_manager.delete_session(session_id)
+    if not deleted:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Session '{session_id}' not found"}
+        )
+    
+    return {"deleted": True, "session_id": session_id}
 

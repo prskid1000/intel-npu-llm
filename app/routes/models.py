@@ -54,12 +54,23 @@ async def get_model(model: str):
             status_code=404
         )
     
+    # Get additional model metadata
+    model_config = model_manager.model_configs.get(model)
+    model_type = model_manager.get_model_type(model) if model_config else "unknown"
+    
     return ModelInfo(
         id=model,
         created=int(time.time()),
         owned_by="local",
         permission=[],
         root=model,
-        parent=None
+        parent=None,
+        # Additional metadata (non-standard but useful)
+        object="model",
+        capabilities={
+            "type": model_type,
+            "device": model_config.device if model_config else "unknown",
+            "path": model_config.path if model_config else "unknown"
+        }
     )
 

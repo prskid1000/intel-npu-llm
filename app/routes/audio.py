@@ -56,7 +56,15 @@ async def create_transcription(
     try:
         import librosa
         raw_speech, samplerate = librosa.load(temp_audio_path, sr=16000)
-        transcription = pipeline.generate(raw_speech.tolist())
+        result = pipeline.generate(raw_speech.tolist())
+        
+        # Extract text from WhisperDecodedResults object
+        if hasattr(result, 'texts'):
+            transcription = result.texts[0] if result.texts else ""
+        elif hasattr(result, '__str__'):
+            transcription = str(result)
+        else:
+            transcription = result
         
         os.unlink(temp_audio_path)
         

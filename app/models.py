@@ -79,6 +79,13 @@ class ToolDefinition(BaseModel):
 # Chat Models
 # ============================================================================
 
+class AudioData(BaseModel):
+    """Audio data in response (GPT-4o style)"""
+    id: Optional[str] = None          # Audio ID
+    data: Optional[str] = None         # Base64 encoded audio
+    transcript: Optional[str] = None   # Text that was spoken
+
+
 class ChatMessage(BaseModel):
     """Chat message with support for multimodal content and tool calls"""
     role: str
@@ -86,12 +93,19 @@ class ChatMessage(BaseModel):
     name: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
+    audio: Optional[AudioData] = None  # Audio output (GPT-4o style)
 
 
 class ResponseFormat(BaseModel):
     """Response format specification for structured outputs"""
     type: str  # "text", "json_object", "json_schema"
     json_schema: Optional[Dict[str, Any]] = None
+
+
+class AudioConfig(BaseModel):
+    """Audio output configuration (GPT-4o style)"""
+    voice: Optional[str] = "default"  # Voice selection for TTS
+    format: Optional[str] = "wav"     # Audio format: wav, mp3, pcm
 
 
 class ChatCompletionRequest(BaseModel):
@@ -110,6 +124,9 @@ class ChatCompletionRequest(BaseModel):
     response_format: Optional[Union[Dict[str, Any], ResponseFormat]] = None
     seed: Optional[int] = None
     logprobs: Optional[bool] = False
+    # Multimodal output support (GPT-4o style)
+    modalities: Optional[List[str]] = None  # ["text", "audio"]
+    audio: Optional[AudioConfig] = None     # Audio configuration
     top_logprobs: Optional[int] = None
     user: Optional[str] = None
     parallel_tool_calls: Optional[bool] = True
@@ -121,11 +138,24 @@ class Usage(BaseModel):
     total_tokens: int
 
 
+class TokenLogprob(BaseModel):
+    """Log probability information for a token"""
+    token: str
+    logprob: float
+    bytes: Optional[List[int]] = None
+    top_logprobs: Optional[List[Dict[str, Any]]] = None
+
+
+class ContentLogprobs(BaseModel):
+    """Logprobs for content tokens"""
+    content: Optional[List[TokenLogprob]] = None
+
+
 class ChatCompletionChoice(BaseModel):
     index: int
     message: ChatMessage
     finish_reason: str
-    logprobs: Optional[Dict[str, Any]] = None
+    logprobs: Optional[ContentLogprobs] = None
 
 
 class ChatCompletionResponse(BaseModel):
@@ -195,6 +225,7 @@ class ModelInfo(BaseModel):
     permission: List[Any] = []
     root: Optional[str] = None
     parent: Optional[str] = None
+    capabilities: Optional[Dict[str, Any]] = None  # Extended metadata (non-standard)
 
 
 class ModelListResponse(BaseModel):

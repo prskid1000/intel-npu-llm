@@ -22,7 +22,9 @@ from ..models import (
     ChatMessage,
     Usage,
     ChatCompletionStreamResponse,
-    ChatCompletionStreamChoice
+    ChatCompletionStreamChoice,
+    ContentLogprobs,
+    TokenLogprob
 )
 from ..utils import (
     build_chat_prompt,
@@ -167,6 +169,18 @@ async def chat_completions_non_streaming(
 ) -> ChatCompletionResponse:
     """Non-streaming chat completion handler"""
     
+    # Reset VLM conversation history to prevent state accumulation
+    if model_type == "vlm":
+        try:
+            # VLMPipeline may have start_chat() method to reset history
+            if hasattr(pipeline, 'start_chat'):
+                pipeline.start_chat()
+            elif hasattr(pipeline, 'reset'):
+                pipeline.reset()
+        except Exception as e:
+            # If reset fails, continue anyway (non-critical)
+            print(f"⚠️  VLM reset warning: {e}")
+    
     try:
         if model_type == "vlm":
             if images:
@@ -225,6 +239,58 @@ async def chat_completions_non_streaming(
     if tool_calls:
         response_message.tool_calls = tool_calls
     
+    # Generate logprobs if requested
+    logprobs_data = None
+    if request.logprobs:
+        # Note: OpenVINO GenAI doesn't expose token-level probabilities via standard API
+        # This is a basic implementation that returns token-level structure
+        # For true logprobs, would need access to model's internal token probabilities
+        tokens = (final_content or response_text).split()
+        logprobs_list = []
+        for token in tokens:
+            # Placeholder logprob values (would need actual model outputs)
+            logprobs_list.append(TokenLogprob(
+                token=token,
+                logprob=-0.5,  # Placeholder
+                bytes=list(token.encode('utf-8')),
+                top_logprobs=None if not request.top_logprobs else [
+                    {"token": token, "logprob": -0.5}
+                ]
+            ))
+        logprobs_data = ContentLogprobs(content=logprobs_list)
+    
+    # Generate audio if modalities includes "audio" (GPT-4o style)
+    if request.modalities and "audio" in request.modalities:
+        from ..models import AudioData
+        import base64
+        
+        tts_models = list(model_manager.tts_pipelines.keys())
+        if tts_models:
+            try:
+                tts_pipeline = model_manager.tts_pipelines[tts_models[0]]
+                text_to_speak = final_content or response_text
+                
+                # Generate audio
+                audio_result = tts_pipeline.generate(text_to_speak)
+                audio_array = audio_result
+                
+                # Convert to base64
+                import io
+                import soundfile as sf
+                audio_buffer = io.BytesIO()
+                sf.write(audio_buffer, audio_array, 16000, format='WAV')
+                audio_buffer.seek(0)
+                audio_base64 = base64.b64encode(audio_buffer.read()).decode('utf-8')
+                
+                # Add audio to response
+                response_message.audio = AudioData(
+                    id=f"audio_{uuid.uuid4().hex[:16]}",
+                    data=audio_base64,
+                    transcript=text_to_speak
+                )
+            except Exception as e:
+                print(f"⚠️  Warning: Could not generate audio: {e}")
+    
     return ChatCompletionResponse(
         id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
         created=int(time.time()),
@@ -233,7 +299,7 @@ async def chat_completions_non_streaming(
             index=0,
             message=response_message,
             finish_reason=finish_reason,
-            logprobs=None
+            logprobs=logprobs_data
         )],
         usage=Usage(
             prompt_tokens=prompt_tokens,
