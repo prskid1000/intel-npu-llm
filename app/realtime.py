@@ -147,6 +147,8 @@ class RealtimeSession:
                     import base64
                     import io
                     
+                    print(f"🔍 VLM generation starting for WebSocket...")
+                    
                     # Process images if provided
                     image_tensors = []
                     if images:
@@ -175,10 +177,15 @@ class RealtimeSession:
                         dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
                         dummy_tensor = ov.Tensor(dummy_image)
                         image_tensors = [dummy_tensor]
+                        print(f"🖼️  Using dummy image for text-only VLM")
+                    
+                    print(f"📝 Prompt length: {len(prompt)} chars")
                     
                     # VLM doesn't support streaming well, use generate directly
                     result = pipeline.generate(prompt, image=image_tensors[0], max_new_tokens=config.max_new_tokens)
                     response_text = result if isinstance(result, str) else result.texts[0]
+                    
+                    print(f"✅ VLM generated {len(response_text)} chars")
                     
                     # Send the full response as a delta
                     await self.send_event("response.text.delta", {
@@ -211,6 +218,10 @@ class RealtimeSession:
                 await _generate_internal()
             except Exception as e:
                 error_msg = str(e)
+                print(f"❌ Error during generation: {error_msg}")
+                import traceback
+                traceback.print_exc()
+                
                 # Check if it's a VLM error that requires pipeline reload
                 vlm_reload_errors = [
                     "prompt_ids.get_size() >= tokenized_history.size()",
@@ -228,14 +239,16 @@ class RealtimeSession:
                         try:
                             await _generate_internal()
                         except Exception as retry_error:
+                            print(f"❌ Retry also failed: {str(retry_error)}")
                             await self.send_error(f"Response generation failed after reload: {str(retry_error)}")
                             return
                     else:
                         await self.send_error(f"VLM reload failed: {error_msg}")
                         return
                 else:
-                    # Not a VLM reload error, just raise it
-                    raise
+                    # Not a VLM reload error, send error and return
+                    await self.send_error(f"Generation error: {error_msg}")
+                    return
             
             # Check for function calls if tools are available
             tool_calls = None

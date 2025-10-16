@@ -341,6 +341,14 @@ class VectorStore:
         similarities = []
         
         for doc_id, doc_data in self.vectors.items():
+            # Skip entries that are not dictionaries (e.g., legacy list entries)
+            if not isinstance(doc_data, dict):
+                continue
+            
+            # Skip entries that don't have required fields
+            if "embedding" not in doc_data or "text" not in doc_data:
+                continue
+            
             doc_vec = np.array(doc_data["embedding"])
             doc_norm = np.linalg.norm(doc_vec)
             
@@ -354,7 +362,7 @@ class VectorStore:
                     "doc_id": doc_id,
                     "text": doc_data["text"],
                     "similarity": float(similarity),
-                    "metadata": doc_data["metadata"]
+                    "metadata": doc_data.get("metadata", {})
                 })
         
         similarities.sort(key=lambda x: x["similarity"], reverse=True)
@@ -378,10 +386,11 @@ class VectorStore:
             {
                 "doc_id": doc_id,
                 "text": data["text"][:100] + "..." if len(data["text"]) > 100 else data["text"],
-                "metadata": data["metadata"],
-                "created_at": data["created_at"]
+                "metadata": data.get("metadata", {}),
+                "created_at": data.get("created_at", 0)
             }
             for doc_id, data in self.vectors.items()
+            if isinstance(data, dict) and "text" in data
         ]
     
     def clear(self):
