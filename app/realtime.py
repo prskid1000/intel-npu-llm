@@ -181,49 +181,17 @@ class RealtimeSession:
                     
                     print(f"📝 Prompt length: {len(prompt)} chars")
                     
-                    # VLM doesn't support streaming well, use generate directly
-                    # Run in executor to avoid blocking the event loop
-                    try:
-                        import concurrent.futures
-                        loop = asyncio.get_event_loop()
-                        
-                        def _run_generate():
-                            try:
-                                print(f"🧵 Thread: Starting VLM generation...")
-                                result = pipeline.generate(prompt, image=image_tensors[0], max_new_tokens=config.max_new_tokens)
-                                print(f"🧵 Thread: VLM generation complete")
-                                return result
-                            except Exception as e:
-                                print(f"🧵 Thread: VLM generation error: {e}")
-                                raise
-                        
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                            print(f"⚙️  Submitting to executor...")
-                            
-                            # Submit the task
-                            future = loop.run_in_executor(executor, _run_generate)
-                            
-                            # Wait with periodic progress updates
-                            start_time = loop.time()
-                            while True:
-                                try:
-                                    result = await asyncio.wait_for(future, timeout=5.0)
-                                    break  # Generation complete
-                                except asyncio.TimeoutError:
-                                    # Still generating, send progress update
-                                    elapsed = loop.time() - start_time
-                                    print(f"⏳ VLM still generating... ({elapsed:.1f}s elapsed)")
-                                    # Continue waiting
-                            
-                            print(f"⚙️  Executor returned result")
-                        
-                        response_text = result if isinstance(result, str) else result.texts[0]
-                        print(f"✅ VLM generated {len(response_text)} chars")
-                    except Exception as thread_error:
-                        print(f"❌ Executor error: {thread_error}")
-                        import traceback
-                        traceback.print_exc()
-                        raise
+                    # VLM doesn't support streaming, use generate directly
+                    # NOTE: This will block but OpenVINO VLM is not thread-safe
+                    print(f"🔮 Starting VLM generation (this may take 30+ seconds on NPU)...")
+                    import time
+                    start_time = time.time()
+                    
+                    result = pipeline.generate(prompt, image=image_tensors[0], max_new_tokens=config.max_new_tokens)
+                    
+                    elapsed = time.time() - start_time
+                    response_text = result if isinstance(result, str) else result.texts[0]
+                    print(f"✅ VLM generated {len(response_text)} chars in {elapsed:.1f}s")
                     
                     # Send the full response as a delta
                     await self.send_event("response.text.delta", {
@@ -243,14 +211,9 @@ class RealtimeSession:
                             })
                             await asyncio.sleep(0)
                     except TypeError:
-                        # Fallback for models without streaming - run in executor
-                        import concurrent.futures
-                        loop = asyncio.get_event_loop()
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            response_text = await loop.run_in_executor(
-                                executor,
-                                lambda: pipeline.generate(prompt, config)
-                            )
+                        # Fallback for models without streaming
+                        print(f"🔮 LLM generation (non-streaming)...")
+                        response_text = pipeline.generate(prompt, config)
                         await self.send_event("response.text.delta", {
                             "response_id": response_id,
                             "delta": response_text,

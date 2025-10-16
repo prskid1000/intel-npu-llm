@@ -1067,13 +1067,15 @@ def test_voice_chat_realtime_websocket():
                         await websocket.send(json.dumps(text_event))
                         
                         # Wait for response events (with timeout)
+                        # VLM generation on NPU can take 30+ seconds
                         response_text = ""
-                        timeout = 10.0
+                        timeout = 60.0  # Increased to 60 seconds for VLM on NPU
                         start_time = asyncio.get_event_loop().time()
                         
                         while asyncio.get_event_loop().time() - start_time < timeout:
                             try:
-                                message = await asyncio.wait_for(websocket.recv(), timeout=2.0)
+                                # Increased recv timeout for VLM generation delay
+                                message = await asyncio.wait_for(websocket.recv(), timeout=60.0)
                                 event = json.loads(message)
                                 event_type = event.get("type")
                                 
@@ -1093,9 +1095,15 @@ def test_voice_chat_realtime_websocket():
                                     error = event.get("error", {})
                                     print(f"\n❌ Error: {error.get('message')}")
                                     break
+                                
+                                else:
+                                    # Log other event types for debugging
+                                    print(f"\n🔔 Event: {event_type}")
                                     
                             except asyncio.TimeoutError:
-                                break
+                                # Timeout waiting for next message - keep waiting
+                                print(f"\n⏳ Waiting for response...")
+                                continue
                         
                         if response_text:
                             print(f"📝 Full response: \"{response_text}\"")
