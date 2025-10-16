@@ -1,38 +1,42 @@
-# API Server
-fastapi
-uvicorn[standard]
-pydantic
-python-multipart
+# ============================================================================
+# OpenVINO GenAI API Server - All Dependencies
+# Install everything: pip install -r requirements.txt
+# ============================================================================
 
-# Client (for examples)
-openai
+# Core API Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
 
-# Image processing
-Pillow
-numpy
+# OpenVINO & AI
+openvino>=2024.0.0
+openvino-genai>=2024.0.0
 
-# HTTP requests (for image URLs)
-requests
+# Data Processing
+numpy>=1.24.0
+Pillow>=10.0.0
 
-# Document processing (optional but recommended)
-PyPDF2  # For PDF files
-python-docx  # For Word documents
+# HTTP & Networking
+requests>=2.31.0
+websockets>=12.0  # For WebSocket Realtime API
 
-# Audio processing
-librosa  # For audio loading (Whisper)
-soundfile  # For audio file I/O (TTS)
-pydub  # For audio format conversion (optional)
+# Client SDK (for examples/testing)
+openai>=1.0.0
 
-# Vector database for RAG (optional)
-chromadb
-faiss-cpu
+# Document Processing (RAG)
+PyPDF2>=3.0.0  # PDF extraction
+python-docx>=1.0.0  # Word document extraction
 
-# Model conversion and optimization
+# Audio Processing (TTS/STT)
+librosa>=0.10.0  # Audio loading for Whisper
+soundfile>=0.12.0  # Audio file I/O
+sounddevice>=0.4.6  # Microphone/speaker (voice chat)
+pydub>=0.25.0  # Audio format conversion (optional)
+
+# Model Conversion Tools (optional - for setup only)
+# Uncomment if you need to convert models:
 hf_xet
 huggingface_hub[hf_xet]
 git+https://github.com/huggingface/optimum-intel.git
 nncf
-
-# OpenVINO GenAI
-openvino-genai
-openvino

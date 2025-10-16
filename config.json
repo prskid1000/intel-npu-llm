@@ -1,11 +1,14 @@
 {
   "host": "0.0.0.0",
   "port": 8000,
+  "upload_dir": "uploads",
+  "vector_store_dir": "vector_store",
   "models": [
     {
       "name": "qwen2.5-3b",
       "path": "models/Qwen/Qwen2.5-3B",
-      "device": "NPU"
+      "device": "NPU",
+      "type": "llm"
     }
   ]
 }
