@@ -42,21 +42,31 @@ class RealtimeSession:
         
     async def send_event(self, event_type: str, data: Dict[str, Any]):
         """Send event to client"""
-        event = {
-            "type": event_type,
-            "event_id": f"evt_{uuid.uuid4().hex[:12]}",
-            **data
-        }
-        await self.websocket.send_json(event)
+        try:
+            event = {
+                "type": event_type,
+                "event_id": f"evt_{uuid.uuid4().hex[:12]}",
+                **data
+            }
+            await self.websocket.send_json(event)
+        except Exception as e:
+            # If we can't send the event, the WebSocket is likely disconnected
+            print(f"⚠️  Failed to send event {event_type}: {e}")
+            raise  # Re-raise to let caller handle the disconnect
     
     async def send_error(self, message: str, code: str = "server_error"):
         """Send error event"""
-        await self.send_event("error", {
-            "error": {
-                "type": code,
-                "message": message
-            }
-        })
+        try:
+            await self.send_event("error", {
+                "error": {
+                    "type": code,
+                    "message": message
+                }
+            })
+        except Exception as e:
+            # If we can't send error, the WebSocket is likely disconnected
+            print(f"⚠️  Failed to send error message: {e}")
+            raise  # Re-raise to let caller handle the disconnect
     
     def add_audio_chunk(self, audio_data: bytes):
         """Add audio chunk to buffer"""
@@ -103,12 +113,21 @@ class RealtimeSession:
                     await self.generate_response(transcription)
                     
                 except Exception as e:
-                    await self.send_error(f"Audio processing failed: {str(e)}")
+                    try:
+                        await self.send_error(f"Audio processing failed: {str(e)}")
+                    except Exception:
+                        print(f"⚠️  Could not send audio processing error")
             else:
-                await self.send_error("No Whisper model available")
+                try:
+                    await self.send_error("No Whisper model available")
+                except Exception:
+                    print(f"⚠️  Could not send 'no model' error")
                 
         except Exception as e:
-            await self.send_error(f"Failed to process audio: {str(e)}")
+            try:
+                await self.send_error(f"Failed to process audio: {str(e)}")
+            except Exception:
+                print(f"⚠️  Could not send audio processing error")
     
     async def generate_response(self, user_input: str, images: list = None):
         """Generate and stream text/audio response with optional image support"""
@@ -247,14 +266,23 @@ class RealtimeSession:
                             await _generate_internal()
                         except Exception as retry_error:
                             print(f"❌ Retry also failed: {str(retry_error)}")
-                            await self.send_error(f"Response generation failed after reload: {str(retry_error)}")
+                            try:
+                                await self.send_error(f"Response generation failed after reload: {str(retry_error)}")
+                            except Exception:
+                                print(f"⚠️  Could not send retry error")
                             return
                     else:
-                        await self.send_error(f"VLM reload failed: {error_msg}")
+                        try:
+                            await self.send_error(f"VLM reload failed: {error_msg}")
+                        except Exception:
+                            print(f"⚠️  Could not send VLM reload error")
                         return
                 else:
                     # Not a VLM reload error, send error and return
-                    await self.send_error(f"Generation error: {error_msg}")
+                    try:
+                        await self.send_error(f"Generation error: {error_msg}")
+                    except Exception:
+                        print(f"⚠️  Could not send generation error")
                     return
             
             # Check for function calls if tools are available
@@ -318,7 +346,10 @@ class RealtimeSession:
                     await self.generate_audio_response(final_text, response_id)
                 
         except Exception as e:
-            await self.send_error(f"Response generation failed: {str(e)}")
+            try:
+                await self.send_error(f"Response generation failed: {str(e)}")
+            except Exception:
+                print(f"⚠️  Could not send response generation error")
     
     async def generate_audio_response(self, text: str, response_id: str):
         """Generate and stream audio for text response"""
@@ -354,7 +385,10 @@ class RealtimeSession:
             })
             
         except Exception as e:
-            await self.send_error(f"Audio generation failed: {str(e)}")
+            try:
+                await self.send_error(f"Audio generation failed: {str(e)}")
+            except Exception:
+                print(f"⚠️  Could not send audio generation error")
 
 
 async def realtime_endpoint(websocket: WebSocket, model: str, model_manager, session_manager: SessionManager):
@@ -481,6 +515,18 @@ async def realtime_endpoint(websocket: WebSocket, model: str, model_manager, ses
             except WebSocketDisconnect:
                 print(f"🔌 WebSocket disconnected")
                 break
+            except RuntimeError as e:
+                # Handle the specific RuntimeError about calling receive after disconnect
+                if "Cannot call \"receive\" once a disconnect message has been received" in str(e):
+                    print(f"🔌 WebSocket already disconnected, breaking loop")
+                    break
+                else:
+                    print(f"❌ RuntimeError in event loop: {e}")
+                    try:
+                        await session.send_error(f"Event processing failed: {str(e)}")
+                    except Exception as send_err:
+                        print(f"❌ Failed to send error: {send_err}")
+                        break
             except Exception as e:
                 print(f"❌ Exception in event loop: {e}")
                 import traceback
@@ -489,6 +535,8 @@ async def realtime_endpoint(websocket: WebSocket, model: str, model_manager, ses
                     await session.send_error(f"Event processing failed: {str(e)}")
                 except Exception as send_err:
                     print(f"❌ Failed to send error: {send_err}")
+                    # If we can't send error, the connection is likely broken
+                    break
     
     except WebSocketDisconnect:
         pass

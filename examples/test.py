@@ -1075,7 +1075,7 @@ def test_voice_chat_realtime_websocket():
                         while asyncio.get_event_loop().time() - start_time < timeout:
                             try:
                                 # Increased recv timeout for VLM generation delay
-                                message = await asyncio.wait_for(websocket.recv(), timeout=60.0)
+                                message = await asyncio.wait_for(websocket.recv(), timeout=300.0)
                                 event = json.loads(message)
                                 event_type = event.get("type")
                                 
