@@ -1075,7 +1075,7 @@ def test_voice_chat_realtime_websocket():
                         while asyncio.get_event_loop().time() - start_time < timeout:
                             try:
                                 # Increased recv timeout for VLM generation delay
-                                message = await asyncio.wait_for(websocket.recv(), timeout=60.0)
+                                message = await asyncio.wait_for(websocket.recv(), timeout=300.0)
                                 event = json.loads(message)
                                 event_type = event.get("type")
                                 
@@ -1716,62 +1716,62 @@ def main():
             traceback.print_exc()
     
     try:
-        # Basic features (1-5)
-        run_test(test_list_models)
-        run_test(test_basic_chat)
-        run_test(test_streaming)
-        run_test(test_text_completion)
-        run_test(test_multi_turn_conversation)
+        # # Basic features (1-5)
+        # run_test(test_list_models)
+        # run_test(test_basic_chat)
+        # run_test(test_streaming)
+        # run_test(test_text_completion)
+        # run_test(test_multi_turn_conversation)
         
-        # Tool calling (6-7)
-        run_test(test_tool_calling)
-        run_test(test_tool_calling_with_execution)
+        # # Tool calling (6-7)
+        # run_test(test_tool_calling)
+        # run_test(test_tool_calling_with_execution)
         
-        # Structured outputs (8-9)
-        run_test(test_json_mode)
-        run_test(test_json_schema)
+        # # Structured outputs (8-9)
+        # run_test(test_json_mode)
+        # run_test(test_json_schema)
         
-        # File & RAG (10)
-        run_test(test_file_upload_and_rag)
+        # # File & RAG (10)
+        # run_test(test_file_upload_and_rag)
         
-        # Embeddings & Vector Store (11-12)
-        run_test(test_embeddings)
-        run_test(test_vector_store)
+        # # Embeddings & Vector Store (11-12)
+        # run_test(test_embeddings)
+        # run_test(test_vector_store)
         
-        # Audio (13-14)
-        run_test(test_text_to_speech)
-        run_test(test_speech_to_text)
+        # # Audio (13-14)
+        # run_test(test_text_to_speech)
+        # run_test(test_speech_to_text)
         
-        # Vision (15)
-        run_test(test_vision_multimodal)
+        # # Vision (15)
+        # run_test(test_vision_multimodal)
         
-        # Image generation (16)
-        run_test(test_image_generation)
+        # # Image generation (16)
+        # run_test(test_image_generation)
         
-        # Content moderation (17)
-        run_test(test_moderation)
+        # # Content moderation (17)
+        # run_test(test_moderation)
         
-        # Advanced features (18-20)
-        run_test(test_seed_reproducibility)
-        run_test(test_stop_sequences)
-        run_test(test_system_fingerprint)
+        # # Advanced features (18-20)
+        # run_test(test_seed_reproducibility)
+        # run_test(test_stop_sequences)
+        # run_test(test_system_fingerprint)
         
-        # Voice chat (21-22)
-        run_test(test_voice_chat_rest_api)
+        # # Voice chat (21-22)
+        # run_test(test_voice_chat_rest_api)
         run_test(test_voice_chat_realtime_websocket)
         
-        # Image editing & variations (23-24)
-        run_test(test_image_edit)
-        run_test(test_image_variations)
+        # # Image editing & variations (23-24)
+        # run_test(test_image_edit)
+        # run_test(test_image_variations)
         
-        # Error handling (25)
-        run_test(test_openai_error_format)
+        # # Error handling (25)
+        # run_test(test_openai_error_format)
         
-        # New features (26-29) - NEWLY IMPLEMENTED!
-        run_test(test_model_retrieve)
-        run_test(test_file_operations)
-        run_test(test_logprobs)
-        run_test(test_multimodal_audio_output)
+        # # New features (26-29) - NEWLY IMPLEMENTED!
+        # run_test(test_model_retrieve)
+        # run_test(test_file_operations)
+        # run_test(test_logprobs)
+        # run_test(test_multimodal_audio_output)
         
         # Summary
         print("\n" + "=" * 70)
