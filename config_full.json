@@ -35,7 +35,7 @@
     {
       "name": "stable-diffusion",
       "path": "models/Text2Image/sd-1.5",
-      "device": "CPU",
+      "device": "GPU",
       "type": "text2image",
       "description": "Stable Diffusion 1.5 - CPU inference (slower but no GPU needed)"
     },
