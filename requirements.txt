@@ -58,3 +58,6 @@ diffusers>=0.30.0
 # ONNX support
 onnx>=1.16.0
 onnxruntime>=1.18.0
+
+#Deepseek janus support
+git+https://github.com/deepseek-ai/Janus.git

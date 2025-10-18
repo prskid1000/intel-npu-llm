@@ -1,303 +1,220 @@
-#!/usr/bin/env python3
 """
-OpenVINO DeepSeek-VL Model Conversion Script
-Based on: https://huggingface.co/deepseek-ai/deepseek-vl-1.3b-chat
-
-This script converts DeepSeek-VL-1.3b-chat to OpenVINO format with INT4 quantization
-for optimal NPU performance.
+DeepSeek Janus-Pro-1B to OpenVINO Conversion Script
+Based on official OpenVINO documentation
 """
 
-import sys
-from pathlib import Path
+import gc
 import warnings
+from pathlib import Path
+import torch
+import openvino as ov
+import nncf
 
-def convert_deepseek_vl():
-    """Convert DeepSeek-VL-1.3b-chat model to OpenVINO INT4 format"""
+# Import from DeepSeek Janus package (required!)
+try:
+    from janus.models import MultiModalityCausalLM, VLChatProcessor
+except ImportError:
+    raise ImportError(
+        "DeepSeek Janus package not found!\n"
+        "Please install it with: pip install git+https://github.com/deepseek-ai/Janus.git"
+    )
+
+warnings.filterwarnings("ignore")
+
+# Configuration
+MODEL_ID = "deepseek-ai/Janus-Pro-1B"
+OUTPUT_DIR = Path("Janus-Pro-1B-ov")
+
+# INT4 compression configuration
+COMPRESSION_CONFIG = {
+    "mode": nncf.CompressWeightsMode.INT4_ASYM,
+    "group_size": 64,
+    "ratio": 1.0,
+}
+
+
+def convert_janus_model(model_id: str, output_dir: Path, compression_config: dict):
+    """
+    Convert Janus-Pro model to OpenVINO IR format with INT4 quantization
     
-    print("=" * 60)
-    print("DeepSeek-VL-1.3b-chat OpenVINO Conversion")
-    print("=" * 60)
-    print()
+    Args:
+        model_id: HuggingFace model ID
+        output_dir: Path to save converted model
+        compression_config: NNCF compression configuration
+    """
     
-    model_id = "deepseek-ai/deepseek-vl-1.3b-chat"
-    out_dir = Path("models/DeepSeek/deepseek-vl-1.3b-chat")
+    print(f"⌛ {model_id.split('/')[-1]} conversion started. Be patient, it may take some time.")
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"Source Model: {model_id}")
-    print(f"Output Directory: {out_dir}")
-    print(f"Quantization: INT4 symmetric (group-size 128)")
-    print()
+    # Step 1: Load original model using Janus package
+    print("⌛ Loading original model...")
     
-    # Create output directory
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Load processor with recommended settings
+    vl_chat_processor = VLChatProcessor.from_pretrained(
+        model_id,
+        use_fast=True  # Use fast image processor
+    )
+    tokenizer = vl_chat_processor.tokenizer
     
-    try:
-        from optimum.intel.openvino import OVModelForVisualCausalLM
-        import nncf
-        import torch
-        import gc
-        
-        print("✓ Required packages loaded")
-        print()
-        
-    except ImportError as e:
-        print(f"❌ ERROR: Missing required package: {e}")
-        print()
-        print("Please ensure you have installed:")
-        print("  pip install optimum-intel[openvino] nncf")
-        return False
+    # Load model
+    model = MultiModalityCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16
+    )
     
-    # Step 1: Load and convert base model
-    print("[1/3] Converting base model to OpenVINO FP16...")
-    print("      This may take several minutes...")
-    print()
+    print(f"✅ Model loaded successfully: {model.__class__.__name__}")
     
-    try:
-        # Check if already converted
-        if (out_dir / "openvino_language_model.xml").exists():
-            print("✓ Model already converted (found in output directory)")
-            print()
-        else:
-            # Convert with FP16 first
-            model = OVModelForVisualCausalLM.from_pretrained(
-                model_id,
-                export=True,
-                trust_remote_code=True,
-                compile=False,
-                load_in_8bit=False,
-            )
-            
-            # Save FP16 model
-            model.save_pretrained(out_dir)
-            
-            # Clear memory
-            del model
-            gc.collect()
-            
-            print("✓ Base model converted to OpenVINO FP16")
-            print()
-        
-    except Exception as e:
-        print(f"❌ ERROR during base conversion: {e}")
-        print()
-        print("Note: DeepSeek-VL uses custom architecture with trust_remote_code=True")
-        print("      Make sure you have the latest optimum-intel version")
-        return False
+    # Step 2: Convert model components
+    # Janus-Pro consists of 7 main components that need separate conversion
     
-    # Step 1.5: Download tokenizer and processor files + convert to OpenVINO
-    print("[1.5/3] Setting up tokenizer and processor...")
-    print()
+    # 2.1 Text Embeddings Model
+    print("⌛ Converting text embeddings model...")
+    text_emb_path = output_dir / "text_embeddings_model.xml"
+    if not text_emb_path.exists():
+        text_emb_model = ov.convert_model(
+            model.language_model.get_input_embeddings(),
+            example_input=torch.ones([1, 10], dtype=torch.int64)
+        )
+        text_emb_model = nncf.compress_weights(text_emb_model, **compression_config)
+        ov.save_model(text_emb_model, text_emb_path)
+        del text_emb_model
+        gc.collect()
+    print("✅ Text embeddings model successfully converted")
     
-    try:
-        from transformers import AutoTokenizer, AutoProcessor
-        from openvino_tokenizers import convert_tokenizer
-        import json
-        
-        # Download and save tokenizer
-        print("   Downloading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        tokenizer.save_pretrained(out_dir)
-        
-        # Download and save processor (includes VLChatProcessor)
-        try:
-            processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-            processor.save_pretrained(out_dir)
-            print("   ✓ Processor files saved (includes vision processor)")
-        except Exception as e:
-            print(f"   Note: Could not save processor: {e}")
-            print("   Attempting to save image processor separately...")
-            try:
-                from transformers import AutoImageProcessor
-                image_processor = AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
-                image_processor.save_pretrained(out_dir)
-                print("   ✓ Image processor saved")
-            except Exception as e2:
-                print(f"   Warning: Could not save image processor: {e2}")
-        
-        print("   ✓ HuggingFace tokenizer files saved")
-        
-        # Add chat template if missing
-        tokenizer_config_path = out_dir / "tokenizer_config.json"
-        if tokenizer_config_path.exists():
-            with open(tokenizer_config_path, 'r', encoding='utf-8') as f:
-                tokenizer_config = json.load(f)
-            
-            if 'chat_template' not in tokenizer_config:
-                print("   Adding chat template...")
-                # DeepSeek-VL uses User/Assistant format
-                tokenizer_config['chat_template'] = "{% for message in messages %}{% if message['role'] == 'User' %}User: {{ message['content'] }}\n\n{% elif message['role'] == 'Assistant' %}Assistant: {{ message['content'] }}\n\n{% endif %}{% endfor %}{% if add_generation_prompt %}Assistant: {% endif %}"
-                
-                with open(tokenizer_config_path, 'w', encoding='utf-8') as f:
-                    json.dump(tokenizer_config, f, indent=2, ensure_ascii=False)
-                print("   ✓ Chat template added")
-        
-        # Convert tokenizer and detokenizer to OpenVINO format
-        print("   Converting tokenizer to OpenVINO format...")
-        import openvino as ov
-        
-        # Create tokenizer
-        ov_tokenizer = convert_tokenizer(tokenizer)
-        tokenizer_path = out_dir / "openvino_tokenizer.xml"
-        ov.save_model(ov_tokenizer, str(tokenizer_path))
-        print("   ✓ OpenVINO tokenizer created (openvino_tokenizer.xml/.bin)")
-        
-        # Create detokenizer
-        print("   Converting detokenizer to OpenVINO format...")
-        # convert_tokenizer with with_detokenizer=True returns a tuple (tokenizer, detokenizer)
-        ov_tokenizer_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
-        detokenizer_path = out_dir / "openvino_detokenizer.xml"
-        # Extract the detokenizer (second element of the tuple)
-        ov.save_model(ov_tokenizer_detokenizer[1], str(detokenizer_path))
-        print("   ✓ OpenVINO detokenizer created (openvino_detokenizer.xml/.bin)")
-        print()
-        
-    except Exception as e:
-        print(f"⚠️  Warning: Could not setup tokenizer: {e}")
-        print("   The model may not work properly without tokenizer files")
-        print()
+    # 2.2 Vision Embeddings Model (Understanding Encoder - SigLIP)
+    print("⌛ Converting vision embeddings model...")
+    vision_emb_path = output_dir / "vision_embeddings_model.xml"
+    if not vision_emb_path.exists():
+        # Example image input: batch_size=1, channels=3, height=384, width=384
+        vision_emb_model = ov.convert_model(
+            model.vision_model,
+            example_input=torch.randn(1, 3, 384, 384)
+        )
+        vision_emb_model = nncf.compress_weights(vision_emb_model, **compression_config)
+        ov.save_model(vision_emb_model, vision_emb_path)
+        del vision_emb_model
+        gc.collect()
+    print("✅ Vision embeddings model successfully converted")
     
-    # Step 2: Apply INT4 quantization
-    print("[2/3] Applying INT4 quantization...")
-    print("      This optimizes the model for NPU inference")
-    print()
+    # 2.3 Gen Embeddings Model (Generation Encoder - VQ Tokenizer)
+    print("⌛ Converting gen embeddings model...")
+    gen_emb_path = output_dir / "gen_embeddings_model.xml"
+    if not gen_emb_path.exists():
+        gen_emb_model = ov.convert_model(
+            model.gen_vision_model,
+            example_input=torch.randn(1, 3, 384, 384)
+        )
+        gen_emb_model = nncf.compress_weights(gen_emb_model, **compression_config)
+        ov.save_model(gen_emb_model, gen_emb_path)
+        del gen_emb_model
+        gc.collect()
+    print("✅ Gen embeddings model successfully converted")
     
-    try:
-        # Re-export with quantization directly
-        print("   Quantization settings:")
-        print("   - Mode: INT4 symmetric")
-        print("   - Group size: 128")
-        print("   - Ratio: 1.0 (all weights quantized)")
-        print()
+    # 2.4 Language Model (Main Transformer)
+    print("⌛ Converting language model (this may take a while)...")
+    lm_path = output_dir / "language_model.xml"
+    if not lm_path.exists():
+        # Create example inputs for language model
+        input_ids = torch.ones([1, 10], dtype=torch.int64)
+        attention_mask = torch.ones([1, 10], dtype=torch.int64)
+        position_ids = torch.arange(0, 10).unsqueeze(0)
         
-        # Export with quantization in one step
-        model = OVModelForVisualCausalLM.from_pretrained(
-            model_id,
-            export=True,
-            trust_remote_code=True,
-            compile=False,
-            load_in_8bit=False,
-            quantization_config={
-                "bits": 4,
-                "sym": True,
-                "group_size": 128,
-                "ratio": 1.0,
+        lm_model = ov.convert_model(
+            model.language_model,
+            example_input={
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "position_ids": position_ids
             }
         )
-        
-        # Save quantized model
-        model.save_pretrained(out_dir)
-        
-        print("✓ INT4 quantization applied and saved")
-        print()
-        
-    except Exception as e:
-        print(f"❌ ERROR during quantization: {e}")
-        print()
-        print("Attempting alternative quantization method...")
-        
-        try:
-            # Alternative: use compress_weights on the existing model
-            from optimum.intel import OVQuantizer
-            
-            quantizer = OVQuantizer.from_pretrained(out_dir, trust_remote_code=True)
-            
-            quantization_config = {
-                "algorithm": "weight_compression",
-                "mode": "INT4_SYM",
-                "group_size": 128,
-                "ratio": 1.0,
-            }
-            
-            quantizer.quantize(
-                quantization_config=quantization_config,
-                save_directory=out_dir
-            )
-            
-            print("✓ INT4 quantization applied using alternative method")
-            print()
-            
-        except Exception as e2:
-            print(f"❌ Alternative method also failed: {e2}")
-            print()
-            print("⚠️  Keeping FP16 model (no quantization)")
-            print("    This will work but use more memory than INT4")
-            print()
+        lm_model = nncf.compress_weights(lm_model, **compression_config)
+        ov.save_model(lm_model, lm_path)
+        del lm_model
+        gc.collect()
+    print("✅ Language model successfully converted")
     
-    # Step 3: Save model info
-    print("[3/3] Saving model information...")
-    print()
+    # 2.5 LM Head (Text token prediction)
+    print("⌛ Converting LM head...")
+    lm_head_path = output_dir / "lm_head.xml"
+    if not lm_head_path.exists():
+        lm_head_model = ov.convert_model(
+            model.language_model.lm_head,
+            example_input=torch.randn(1, 10, model.language_model.config.hidden_size)
+        )
+        lm_head_model = nncf.compress_weights(lm_head_model, **compression_config)
+        ov.save_model(lm_head_model, lm_head_path)
+        del lm_head_model
+        gc.collect()
+    print("✅ LM head successfully converted")
+    
+    # 2.6 Gen Head (Image token prediction)
+    print("⌛ Converting gen head...")
+    gen_head_path = output_dir / "gen_head.xml"
+    if not gen_head_path.exists():
+        gen_head_model = ov.convert_model(
+            model.gen_head,
+            example_input=torch.randn(1, 10, model.language_model.config.hidden_size)
+        )
+        gen_head_model = nncf.compress_weights(gen_head_model, **compression_config)
+        ov.save_model(gen_head_model, gen_head_path)
+        del gen_head_model
+        gc.collect()
+    print("✅ Gen head successfully converted")
+    
+    # 2.7 Gen Decoder (Image reconstruction from tokens)
+    print("⌛ Converting gen decoder...")
+    gen_decoder_path = output_dir / "gen_decoder.xml"
+    if not gen_decoder_path.exists():
+        # Image tokens are typically in a grid format
+        gen_decoder_model = ov.convert_model(
+            model.gen_vision_decoder,
+            example_input=torch.randint(0, 8192, (1, 576))  # 24x24 grid = 576 tokens
+        )
+        gen_decoder_model = nncf.compress_weights(gen_decoder_model, **compression_config)
+        ov.save_model(gen_decoder_model, gen_decoder_path)
+        del gen_decoder_model
+        gc.collect()
+    print("✅ Gen decoder model successfully converted")
+    
+    # Step 3: Save tokenizer and config
+    print("⌛ Saving tokenizer and configuration...")
+    vl_chat_processor.save_pretrained(output_dir)
+    
+    # Save model config
+    if hasattr(model, 'config'):
+        model.config.save_pretrained(output_dir)
+    
+    print(f"✅ {model_id.split('/')[-1]} model conversion finished. Results in {output_dir}")
+
+
+def main():
+    """Main conversion function"""
+    
+    print("="*60)
+    print("DeepSeek Janus-Pro-1B to OpenVINO Conversion")
+    print("="*60)
+    
+    # Install required packages
+    print("\n📦 Required packages:")
+    print("pip install torch torchvision transformers nncf openvino")
+    print("pip install git+https://github.com/deepseek-ai/Janus\n")
     
     try:
-        import json
+        convert_janus_model(MODEL_ID, OUTPUT_DIR, COMPRESSION_CONFIG)
         
-        model_info = {
-            "model_id": model_id,
-            "model_type": "vision-language",
-            "architecture": "DeepSeek-VL",
-            "vision_encoder": "SigLIP-L",
-            "image_size": "384x384",
-            "base_model": "DeepSeek-LLM-1.3b-base",
-            "quantization": "INT4 symmetric",
-            "framework": "OpenVINO",
-            "usage": "Real-world vision and language understanding",
-            "capabilities": [
-                "Logical diagrams",
-                "Web pages",
-                "Formula recognition",
-                "Scientific literature",
-                "Natural images",
-                "Embodied intelligence"
-            ]
-        }
-        
-        info_path = out_dir / "model_info.json"
-        with open(info_path, 'w', encoding='utf-8') as f:
-            json.dump(model_info, f, indent=2, ensure_ascii=False)
-        
-        print("✓ Model information saved")
-        print()
+        print("\n" + "="*60)
+        print("✅ CONVERSION COMPLETED SUCCESSFULLY!")
+        print("="*60)
+        print(f"\nModel saved to: {OUTPUT_DIR}")
+        print("\nYou can now use the model with OpenVINO GenAI:")
+        print(f"  from openvino_genai import VLMPipeline")
+        print(f"  pipe = VLMPipeline('{OUTPUT_DIR}', 'CPU')")
         
     except Exception as e:
-        print(f"⚠️  Warning: Could not save model info: {e}")
-        print()
-    
-    # Success!
-    print("=" * 60)
-    print("✅ Conversion Complete!")
-    print("=" * 60)
-    print()
-    print(f"Model saved to: {out_dir}")
-    print()
-    print("Model capabilities:")
-    print("  • Image size: 384x384 pixels")
-    print("  • Vision encoder: SigLIP-L")
-    print("  • Language model: DeepSeek-LLM-1.3b")
-    print("  • Training: ~400B vision-language tokens")
-    print()
-    print("Next steps:")
-    print("  1. Update your config.json to use this model")
-    print("  2. Run: python npu.py")
-    print()
-    print("Example config entry:")
-    print("  {")
-    print('    "id": "deepseek-vl-1.3b-chat",')
-    print('    "name": "DeepSeek-VL 1.3B Chat",')
-    print('    "path": "models/DeepSeek/deepseek-vl-1.3b-chat",')
-    print('    "type": "vision-language"')
-    print("  }")
-    print()
-    
-    return True
+        print(f"\n❌ ERROR during conversion: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
-    warnings.filterwarnings('ignore')
-    
-    success = convert_deepseek_vl()
-    
-    if not success:
-        print()
-        print("Conversion failed. Please check the errors above.")
-        sys.exit(1)
-    
-    sys.exit(0)
-
+    main()

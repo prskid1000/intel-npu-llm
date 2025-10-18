@@ -84,7 +84,9 @@ def convert_ssd1b():
             "--model", model_id,
             "--task", "text-to-image",
             "--library", "diffusers",
-            "--weight-format", "fp16",
+            "--weight-format", "int4",
+            "--group-size", "128",
+            "--ratio", "1.0",
             str(out_dir)
         ]
         
