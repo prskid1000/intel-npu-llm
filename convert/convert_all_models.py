@@ -29,7 +29,6 @@ def print_header():
     print()
     print("This will convert all models needed for full OpenAI API compatibility:")
     print("  1. Phi-3.5-Vision (LLM + VLM) - Text chat & vision")
-    print("  2. DeepSeek-VL-1.3b (VLM) - Vision & language understanding")
     print("  3. BGE-small-en-v1.5 (Embeddings) - RAG & vector search")
     print("  4. Whisper-base (STT) - Speech-to-text")
     print("  5. SpeechT5 (TTS) - Text-to-speech")
@@ -103,7 +102,6 @@ def main():
     # Model conversion sequence
     conversions = [
         ("Phi-3.5-Vision (LLM+VLM)", convert_phi3_vision),
-        ("DeepSeek-VL-1.3b (VLM)", convert_deepseek_vl),
         ("Embeddings (BGE-small-en-v1.5)", convert_embeddings),
         ("Whisper (Speech-to-Text)", convert_whisper),
         ("TTS (SpeechT5)", convert_tts),
