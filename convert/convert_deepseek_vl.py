@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore")
 
 # Configuration
 MODEL_ID = "deepseek-ai/Janus-Pro-1B"
-OUTPUT_DIR = Path("Janus-Pro-1B-ov")
+OUTPUT_DIR = Path("/models/DeepSeek/Janus-Pro")
 
 # INT4 compression configuration
 COMPRESSION_CONFIG = {
