@@ -5,11 +5,11 @@
   "vector_store_dir": "vector_store",
   "models": [
     {
-      "name": "phi-3.5-vision",
-      "path": "models/Phi/Phi-3.5-vision-instruct",
+      "name": "janus-pro",
+      "path": "models/DeepSeek/Janus-Pro",
       "device": "NPU",
       "type": "vlm",
-      "description": "Unified multimodal model - handles text chat, completions, tool calling, AND vision tasks (4B params, 128K context)"
+      "description": "Vision Language Model"
     },
     {
       "name": "text-embedding-model",
@@ -33,11 +33,11 @@
       "description": "Text-to-speech generation"
     },
     {
-      "name": "stable-diffusion",
-      "path": "models/Text2Image/sd-1.5",
+      "name": "stable-diffusion-turbo",
+      "path": "models/Text2Image/SSD-1B",
       "device": "GPU",
       "type": "text2image",
-      "description": "Stable Diffusion 1.5 - CPU inference"
+      "description": "Stable Diffusion Turbo - CPU inference"
     },
     {
       "name": "moderation-model",

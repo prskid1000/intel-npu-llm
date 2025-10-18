@@ -77,13 +77,22 @@ class ModelManager:
                         )
                         self.text2image_pipelines[model_config.name] = pipeline
                     except Exception as e:
-                        print(f"⚠️  Warning: Could not load Text2Image pipeline: {e}")
-                        print(f"   Trying fallback method...")
-                        core = ov.Core()
-                        model_path = Path(model_config.path) / "openvino_model.xml"
-                        model = core.read_model(model=str(model_path))
-                        compiled_model = core.compile_model(model, model_config.device)
-                        self.text2image_pipelines[model_config.name] = compiled_model
+                        try:
+                            from optimum.intel import OVStableDiffusionXLPipeline
+                            pipeline = OVStableDiffusionXLPipeline.from_pretrained(
+                                model_config.path,
+                                device=model_config.device,
+                                compile=True
+                            )
+                            self.text2image_pipelines[model_config.name] = pipeline
+                        except Exception as e:
+                            print(f"⚠️  Warning: Could not load Text2Image XL pipeline: {e}")
+                            print(f"   Trying fallback method...")
+                            core = ov.Core()
+                            model_path = Path(model_config.path) / "openvino_model.xml"
+                            model = core.read_model(model=str(model_path))
+                            compiled_model = core.compile_model(model, model_config.device)
+                            self.text2image_pipelines[model_config.name] = compiled_model
                 
                 elif model_config.type == "moderation":
                     core = ov.Core()
