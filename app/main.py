@@ -228,15 +228,19 @@ async def health():
     whisper_count = len(model_manager.whisper_pipelines) if model_manager else 0
     tts_count = len(model_manager.tts_pipelines) if model_manager else 0
     embedding_count = len(model_manager.embedding_pipelines) if model_manager else 0
+    text2image_count = len(model_manager.text2image_pipelines) if model_manager else 0
+    moderation_count = len(model_manager.moderation_pipelines) if model_manager else 0
     
     return {
         "status": "healthy",
-        "models_loaded": llm_count + vlm_count + whisper_count + tts_count + embedding_count,
+        "models_loaded": llm_count + vlm_count + whisper_count + tts_count + embedding_count + text2image_count + moderation_count,
         "llm_models": llm_count,
         "vlm_models": vlm_count,
         "whisper_models": whisper_count,
         "tts_models": tts_count,
         "embedding_models": embedding_count,
+        "text2image_models": text2image_count,
+        "moderation_models": moderation_count,
         "files_stored": len(file_storage.files_metadata) if file_storage else 0,
         "documents_in_vector_store": len(vector_store.vectors) if vector_store else 0
     }

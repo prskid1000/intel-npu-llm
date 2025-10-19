@@ -362,15 +362,119 @@ class RealtimeSession:
             tts_pipeline = self.model_manager.tts_pipelines[tts_models[0]]
             
             result = tts_pipeline.generate(text)
-            speech = result.speeches[0]
-            audio_data = speech.data[0]
+            
+            print(f"   Audio result type: {type(result).__name__}")
+            
+            # Extract audio data from OpenVINO GenAI result
+            audio_array = None
+            for attr in ['speeches', 'audios', 'audio', 'waveform', 'data']:
+                if hasattr(result, attr):
+                    audio_data = getattr(result, attr)
+                    # If it's a list, take the first element
+                    audio_array = audio_data[0] if isinstance(audio_data, list) and audio_data else audio_data
+                    print(f"   Extracted from .{attr}: type={type(audio_array)}")
+                    break
+            
+            # Fallback to dict access
+            if audio_array is None and isinstance(result, dict):
+                for key in ['speeches', 'audio', 'waveform', 'data', 'audios']:
+                    if key in result:
+                        audio_array = result[key]
+                        audio_array = audio_array[0] if isinstance(audio_array, list) and audio_array else audio_array
+                        print(f"   Extracted from dict['{key}']: type={type(audio_array)}")
+                        break
+            
+            if audio_array is None:
+                raise ValueError(f"Could not extract audio from TTS result: {type(result)}")
+            
+            print(f"   Audio shape: {audio_array.shape if hasattr(audio_array, 'shape') else 'N/A'}")
+            print(f"   Audio dtype: {audio_array.dtype if hasattr(audio_array, 'dtype') else 'N/A'}")
+            
+            # Convert to numpy if needed (handle OpenVINO Tensors, torch tensors, etc.)
+            if not isinstance(audio_array, np.ndarray):
+                # OpenVINO Tensor - use .data property
+                if hasattr(audio_array, 'data'):
+                    audio_array = audio_array.data
+                    print(f"   Converted from OpenVINO Tensor via .data")
+                # PyTorch Tensor
+                elif hasattr(audio_array, 'numpy'):
+                    audio_array = audio_array.numpy()
+                    print(f"   Converted from PyTorch Tensor via .numpy()")
+                elif hasattr(audio_array, 'cpu'):
+                    audio_array = audio_array.cpu().numpy()
+                    print(f"   Converted from PyTorch Tensor via .cpu().numpy()")
+                else:
+                    audio_array = np.array(audio_array)
+                    print(f"   Converted via np.array()")
+            
+            print(f"   After conversion - type: {type(audio_array)}, dtype: {audio_array.dtype if hasattr(audio_array, 'dtype') else 'N/A'}")
+            
+            # Handle object dtype - force conversion to float32
+            if hasattr(audio_array, 'dtype') and (audio_array.dtype == object or audio_array.dtype == np.object_):
+                print(f"   ⚠️  Object dtype detected, converting to float32...")
+                # Try to extract actual numeric data
+                try:
+                    # Check if it's a 0-d array containing the actual data
+                    if audio_array.ndim == 0:
+                        # Extract the scalar value
+                        audio_array = audio_array.item()
+                        print(f"   Extracted from 0-d array: {type(audio_array)}")
+                        
+                        # If it's still an object, try to get its data
+                        if hasattr(audio_array, 'audios'):
+                            audio_array = audio_array.audios[0]
+                        elif hasattr(audio_array, 'numpy'):
+                            audio_array = audio_array.numpy()
+                        
+                        # Convert to numpy array
+                        if not isinstance(audio_array, np.ndarray):
+                            audio_array = np.array(audio_array, dtype=np.float32)
+                    elif audio_array.size > 0 and hasattr(audio_array.flat[0], 'numpy'):
+                        # If it's an array of arrays or tensors, flatten and convert
+                        audio_array = np.concatenate([x.numpy().flatten() for x in audio_array.flat])
+                    else:
+                        # Last resort: force conversion
+                        audio_array = audio_array.astype(np.float32)
+                except Exception as e:
+                    print(f"   ⚠️  Object conversion failed: {e}")
+                    raise ValueError(f"Cannot convert audio data from object dtype: {type(audio_array)}")
+                print(f"   After object conversion - dtype: {audio_array.dtype}")
+            
+            # Ensure numeric dtype (soundfile requires float32/64 or int16/32)
+            if audio_array.dtype not in [np.float32, np.float64, np.int16, np.int32]:
+                print(f"   Converting {audio_array.dtype} to float32")
+                audio_array = audio_array.astype(np.float32)
+            
+            # Flatten to 1D if multidimensional
+            if audio_array.ndim > 1:
+                print(f"   Flattening {audio_array.ndim}D array to 1D")
+                audio_array = audio_array.flatten()
+            
+            print(f"   Final audio: shape={audio_array.shape}, dtype={audio_array.dtype}, size={audio_array.size}")
+            
+            # Validate array
+            if audio_array.size == 0:
+                raise ValueError("Audio array is empty after processing")
+            
+            # Convert to int16 for streaming (PCM16 format)
+            # First normalize to [-1, 1] if needed
+            if audio_array.dtype in [np.float32, np.float64]:
+                # Check if already normalized
+                if np.abs(audio_array).max() <= 1.0:
+                    audio_array = (audio_array * 32767).astype(np.int16)
+                else:
+                    # Normalize then convert
+                    audio_array = (audio_array / np.abs(audio_array).max() * 32767).astype(np.int16)
+            elif audio_array.dtype not in [np.int16, np.int32]:
+                # Ensure we have valid dtype
+                audio_array = audio_array.astype(np.int16)
             
             sample_rate = 16000
             chunk_size = 4096
             
-            for i in range(0, len(audio_data), chunk_size):
-                chunk = audio_data[i:i + chunk_size]
-                audio_bytes = chunk.astype(np.int16).tobytes()
+            for i in range(0, len(audio_array), chunk_size):
+                chunk = audio_array[i:i + chunk_size]
+                audio_bytes = chunk.tobytes()
                 audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
                 
                 await self.send_event("response.audio.delta", {
@@ -386,6 +490,9 @@ class RealtimeSession:
             })
             
         except Exception as e:
+            print(f"⚠️  Audio generation error: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             try:
                 await self.send_error(f"Audio generation failed: {str(e)}")
             except Exception:

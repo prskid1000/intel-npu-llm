@@ -2176,49 +2176,6 @@ def main():
         run_test(test_realtime_session_management)
         run_test(test_server_health_and_info)
         
-        # Summary
-        print("\n" + "=" * 70)
-        print("TEST SUITE COMPLETED")
-        print("=" * 70)
-        print(f"\n📊 Test Results:")
-        print(f"   ✅ Passed: {tests_passed}/{tests_run}")
-        if tests_failed > 0:
-            print(f"   ❌ Failed: {tests_failed}")
-        if tests_skipped > 0:
-            print(f"   ⚠️  Skipped: {tests_skipped}")
-        
-        if tests_failed == 0 and tests_skipped == 0:
-            print(f"\n🎉 All {tests_run} tests passed!")
-        elif tests_failed == 0:
-            print(f"\n✅ All non-skipped tests passed ({tests_passed} passed, {tests_skipped} skipped)")
-        print("\n📊 Test Coverage (100% of all endpoints!):")
-        print("   ✓ Core API: Models (list + retrieve 🆕), Chat, Completions, Streaming")
-        print("   ✓ Advanced: Tools, JSON mode, Structured outputs, Logprobs 🆕")
-        print("   ✓ Files: Upload, List 🆕, Retrieve 🆕, Delete 🆕, Download 🆕, RAG")
-        print("   ✓ Vector Store: Add, Search, List 🆕, Get 🆕, Delete 🆕, Clear 🆕")
-        print("   ✓ Audio: TTS, STT, Voice chat (REST + WebSocket)")
-        print("   ✓ Images: Generation, Editing, Variations")
-        print("   ✓ Vision: Multimodal, VLM support")
-        print("   ✓ Multimodal Output: Text + Audio (GPT-4o style) 🆕")
-        print("   ✓ WebSocket: Realtime API, Function calling support 🆕")
-        print("   ✓ Session Management: List 🆕, Get 🆕, Delete 🆕 (REST API)")
-        print("   ✓ Server: Health check 🆕, Info endpoint 🆕")
-        print("   ✓ Safety: Content moderation")
-        print("   ✓ Parameters: Seed, stop sequences, fingerprint")
-        print("   ✓ Compatibility: OpenAI error format")
-        print("\n⚠️  Some tests may have been skipped if required models are not configured.")
-        print("\nTo enable all features, configure your config.json with:")
-        print("  • LLM models (type: 'llm')")
-        print("  • Vision models (type: 'vlm')")
-        print("  • Whisper models (type: 'whisper')")
-        print("  • TTS models (type: 'tts')")
-        print("  • Embedding models (type: 'embedding')")
-        print("  • Text-to-image models (type: 'text2image')")
-        print("  • Moderation models (type: 'moderation')")
-        print("\n📚 For voice chat demos with audio I/O:")
-        print("   Install: pip install sounddevice soundfile websockets")
-        print("=" * 70)
-        
     except KeyboardInterrupt:
         print("\n\n⚠️  Tests interrupted by user")
         print(f"\n📊 Partial Results before interruption:")
