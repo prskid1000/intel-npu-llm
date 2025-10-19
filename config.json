@@ -35,9 +35,9 @@
     {
       "name": "sdxl-turbo",
       "path": "models/Text2Image/SSD-1B",
-      "device": "CPU",
+      "device": "GPU",
       "type": "text2image",
-      "description": "SDXL Turbo - CPU inference",
+      "description": "SDXL Turbo - GPU inference",
       "num_inference_steps": 6
     },
     {
