@@ -113,7 +113,7 @@ async def chat_completions(request: ChatCompletionRequest):
     else:
         images = []
         file_ids = []
-        prompt = build_chat_prompt(request.messages, request.tools if use_tools else None)
+        prompt = build_chat_prompt(request.messages, request.tools if use_tools else None, request.model)
         
         if use_json_mode:
             json_instruction = "\n\nIMPORTANT: You must respond with valid JSON only. "
@@ -234,9 +234,13 @@ async def chat_completions_non_streaming(
     was_stopped = False
     if request.stop:
         stop_strings = [request.stop] if isinstance(request.stop, str) else request.stop
+        print(f"🛑 Checking stop sequences: {stop_strings}")
+        print(f"   Response length before: {len(response_text)} chars")
         response_text, was_stopped = apply_stop_sequences(response_text, stop_strings)
         if was_stopped:
-            print(f"🛑 Stop sequence triggered, truncated response")
+            print(f"   ✅ Stop sequence triggered, truncated to {len(response_text)} chars")
+        else:
+            print(f"   ⚠️  No stop sequence found in response")
     
     # Parse response
     tool_calls = None
@@ -244,7 +248,7 @@ async def chat_completions_non_streaming(
     final_content = response_text
     
     if use_tools:
-        cleaned_text, parsed_tool_calls = parse_tool_calls_from_response(response_text)
+        cleaned_text, parsed_tool_calls = parse_tool_calls_from_response(response_text, request.model)
         if parsed_tool_calls:
             tool_calls = parsed_tool_calls
             final_content = cleaned_text if cleaned_text else None
@@ -318,11 +322,18 @@ async def chat_completions_non_streaming(
                 audio_result = tts_pipeline.generate(text_to_speak)
                 audio_array = audio_result
                 
+                # Ensure audio is in correct format (flatten if needed)
+                if isinstance(audio_array, np.ndarray):
+                    audio_array = audio_array.flatten()
+                elif hasattr(audio_array, 'flatten'):
+                    audio_array = audio_array.flatten()
+                
                 # Convert to base64
                 import io
                 import soundfile as sf
                 audio_buffer = io.BytesIO()
-                sf.write(audio_buffer, audio_array, 16000, format='WAV')
+                # Write as mono audio (1D array)
+                sf.write(audio_buffer, audio_array, 16000, format='WAV', subtype='PCM_16')
                 audio_buffer.seek(0)
                 audio_base64 = base64.b64encode(audio_buffer.read()).decode('utf-8')
                 

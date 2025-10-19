@@ -49,12 +49,29 @@ def create_error_response(
 # Tool Calling Helpers
 # ============================================================================
 
-def format_tools_for_prompt(tools: List[ToolDefinition]) -> str:
-    """Format tools/functions for inclusion in the prompt (Qwen 2.5 VL compatible format)"""
-    if not tools:
-        return ""
+def detect_model_family(model_name: str) -> str:
+    """
+    Detect the model family from model name for tool calling format
     
-    # Format tools in Qwen-compatible JSON format
+    Returns:
+        Model family: 'qwen', 'llama', 'mistral', 'phi', or 'generic'
+    """
+    model_lower = model_name.lower()
+    
+    if 'qwen' in model_lower:
+        return 'qwen'
+    elif 'llama' in model_lower or 'llama-3' in model_lower:
+        return 'llama'
+    elif 'mistral' in model_lower or 'mixtral' in model_lower:
+        return 'mistral'
+    elif 'phi' in model_lower:
+        return 'phi'
+    else:
+        return 'generic'
+
+
+def format_tools_for_qwen(tools: List[ToolDefinition]) -> str:
+    """Format tools for Qwen models (XML-style tags)"""
     tools_list = []
     for tool in tools:
         func = tool.function
@@ -68,7 +85,6 @@ def format_tools_for_prompt(tools: List[ToolDefinition]) -> str:
         }
         tools_list.append(tool_dict)
     
-    # Qwen format: Clear, structured tool description with examples
     tools_description = "\n\n# Available Tools\n\n"
     tools_description += "You have access to the following functions. Use them when necessary:\n\n"
     tools_description += f"{json.dumps(tools_list, indent=2)}\n\n"
@@ -80,33 +96,286 @@ def format_tools_for_prompt(tools: List[ToolDefinition]) -> str:
     return tools_description
 
 
-def parse_tool_calls_from_response(response_text: str) -> Tuple[str, List[ToolCall]]:
-    """Parse tool calls from model response"""
+def format_tools_for_llama(tools: List[ToolDefinition]) -> str:
+    """Format tools for Llama 3.1+ models (JSON array format)"""
+    tools_list = []
+    for tool in tools:
+        func = tool.function
+        tool_dict = {
+            "type": "function",
+            "function": {
+                "name": func.name,
+                "description": func.description or "No description provided",
+                "parameters": func.parameters or {}
+            }
+        }
+        tools_list.append(tool_dict)
+    
+    tools_description = "\n\nYou have access to the following functions:\n\n"
+    tools_description += f"{json.dumps(tools_list, indent=2)}\n\n"
+    tools_description += "To call a function, respond ONLY with a JSON object in this exact format:\n"
+    tools_description += '{"name": "function_name", "parameters": {"param": "value"}}\n\n'
+    tools_description += "For multiple function calls, use a JSON array:\n"
+    tools_description += '[{"name": "func1", "parameters": {...}}, {"name": "func2", "parameters": {...}}]\n\n'
+    tools_description += "After receiving function results, respond with the answer to the user's question.\n"
+    
+    return tools_description
+
+
+def format_tools_for_mistral(tools: List[ToolDefinition]) -> str:
+    """Format tools for Mistral/Mixtral models"""
+    tools_list = []
+    for tool in tools:
+        func = tool.function
+        tool_dict = {
+            "type": "function",
+            "function": {
+                "name": func.name,
+                "description": func.description or "No description provided",
+                "parameters": func.parameters or {}
+            }
+        }
+        tools_list.append(tool_dict)
+    
+    tools_description = "\n\n[AVAILABLE_TOOLS]\n"
+    tools_description += f"{json.dumps(tools_list, indent=2)}\n"
+    tools_description += "[/AVAILABLE_TOOLS]\n\n"
+    tools_description += "To use a tool, respond with:\n"
+    tools_description += '[TOOL_CALLS] [{"name": "function_name", "arguments": {...}}]\n\n'
+    tools_description += "You can call multiple tools in the array.\n"
+    tools_description += "After receiving tool results, provide your final answer.\n"
+    
+    return tools_description
+
+
+def format_tools_for_phi(tools: List[ToolDefinition]) -> str:
+    """Format tools for Phi models (Python-style function signatures)"""
+    tools_list = []
+    for tool in tools:
+        func = tool.function
+        tool_dict = {
+            "type": "function",
+            "function": {
+                "name": func.name,
+                "description": func.description or "No description provided",
+                "parameters": func.parameters or {}
+            }
+        }
+        tools_list.append(tool_dict)
+    
+    tools_description = "\n\n## Available Functions\n\n"
+    tools_description += "You have access to the following functions:\n\n"
+    tools_description += f"{json.dumps(tools_list, indent=2)}\n\n"
+    tools_description += "To call a function, use this format:\n"
+    tools_description += '```function\n{"name": "function_name", "arguments": {"param": "value"}}\n```\n\n'
+    tools_description += "You can call multiple functions. After receiving results, answer the user's question.\n"
+    
+    return tools_description
+
+
+def format_tools_for_generic(tools: List[ToolDefinition]) -> str:
+    """Format tools for generic models (simple instruction format)"""
+    tools_list = []
+    for tool in tools:
+        func = tool.function
+        tools_list.append({
+            "name": func.name,
+            "description": func.description or "No description provided",
+            "parameters": func.parameters or {}
+        })
+    
+    tools_description = "\n\nYou have access to these functions:\n\n"
+    for tool_info in tools_list:
+        tools_description += f"Function: {tool_info['name']}\n"
+        tools_description += f"Description: {tool_info['description']}\n"
+        tools_description += f"Parameters: {json.dumps(tool_info['parameters'], indent=2)}\n\n"
+    
+    tools_description += "To call a function, respond with JSON:\n"
+    tools_description += '{"function": "function_name", "arguments": {"param": "value"}}\n\n'
+    
+    return tools_description
+
+
+def format_tools_for_prompt(tools: List[ToolDefinition], model_name: str = None) -> str:
+    """
+    Format tools/functions for inclusion in the prompt (model-aware)
+    
+    Args:
+        tools: List of tool definitions
+        model_name: Name of the model to format for (auto-detects if provided)
+    
+    Returns:
+        Formatted tools string for the specific model
+    """
+    if not tools:
+        return ""
+    
+    # Detect model family
+    model_family = detect_model_family(model_name) if model_name else 'generic'
+    
+    # Use appropriate formatter
+    if model_family == 'qwen':
+        return format_tools_for_qwen(tools)
+    elif model_family == 'llama':
+        return format_tools_for_llama(tools)
+    elif model_family == 'mistral':
+        return format_tools_for_mistral(tools)
+    elif model_family == 'phi':
+        return format_tools_for_phi(tools)
+    else:
+        return format_tools_for_generic(tools)
+
+
+def parse_tool_calls_from_response(response_text: str, model_name: str = None) -> Tuple[str, List[ToolCall]]:
+    """
+    Parse tool calls from model response (supports multiple formats)
+    
+    Tries to detect and parse tool calls in various formats:
+    - Qwen: <tool_call>...</tool_call>
+    - Llama: {"name": "...", "parameters": {...}}
+    - Mistral: [TOOL_CALLS] [...]
+    - Phi: ```function...```
+    - Generic: {"function": "...", "arguments": {...}}
+    """
     tool_calls = []
     cleaned_text = response_text
+    model_family = detect_model_family(model_name) if model_name else 'generic'
     
     try:
-        # Look for tool_call XML tags (Qwen format)
+        # 1. Try Qwen format: <tool_call>...</tool_call>
         tool_call_pattern = r'<tool_call>(.*?)</tool_call>'
         matches = re.findall(tool_call_pattern, response_text, re.DOTALL)
         
-        for match in matches:
-            try:
-                tool_data = json.loads(match.strip())
-                tool_call = ToolCall(
-                    id=f"call_{uuid.uuid4().hex[:24]}",
-                    type="function",
-                    function=FunctionCall(
-                        name=tool_data.get("name", ""),
-                        arguments=json.dumps(tool_data.get("arguments", {}))
+        if matches:
+            for match in matches:
+                try:
+                    tool_data = json.loads(match.strip())
+                    tool_call = ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:24]}",
+                        type="function",
+                        function=FunctionCall(
+                            name=tool_data.get("name", ""),
+                            arguments=json.dumps(tool_data.get("arguments", {}))
+                        )
                     )
-                )
-                tool_calls.append(tool_call)
-                cleaned_text = cleaned_text.replace(f"<tool_call>{match}</tool_call>", "")
-            except json.JSONDecodeError:
-                pass
+                    tool_calls.append(tool_call)
+                    cleaned_text = cleaned_text.replace(f"<tool_call>{match}</tool_call>", "")
+                except json.JSONDecodeError:
+                    pass
         
-        # Also try to parse direct JSON format
+        # 2. Try Mistral format: [TOOL_CALLS] [...]
+        if not tool_calls:
+            mistral_pattern = r'\[TOOL_CALLS\]\s*(\[.*?\])'
+            mistral_matches = re.findall(mistral_pattern, response_text, re.DOTALL)
+            
+            if mistral_matches:
+                try:
+                    tools_array = json.loads(mistral_matches[0])
+                    for tool_data in tools_array:
+                        tool_call = ToolCall(
+                            id=f"call_{uuid.uuid4().hex[:24]}",
+                            type="function",
+                            function=FunctionCall(
+                                name=tool_data.get("name", ""),
+                                arguments=json.dumps(tool_data.get("arguments", {}))
+                            )
+                        )
+                        tool_calls.append(tool_call)
+                    cleaned_text = re.sub(mistral_pattern, "", response_text, flags=re.DOTALL)
+                except json.JSONDecodeError:
+                    pass
+        
+        # 3. Try Phi format: ```function...```
+        if not tool_calls:
+            phi_pattern = r'```function\s*(.*?)\s*```'
+            phi_matches = re.findall(phi_pattern, response_text, re.DOTALL)
+            
+            if phi_matches:
+                for match in phi_matches:
+                    try:
+                        tool_data = json.loads(match.strip())
+                        tool_call = ToolCall(
+                            id=f"call_{uuid.uuid4().hex[:24]}",
+                            type="function",
+                            function=FunctionCall(
+                                name=tool_data.get("name", ""),
+                                arguments=json.dumps(tool_data.get("arguments", {}))
+                            )
+                        )
+                        tool_calls.append(tool_call)
+                        cleaned_text = cleaned_text.replace(f"```function\n{match}\n```", "")
+                    except json.JSONDecodeError:
+                        pass
+        
+        # 4. Try Llama format: JSON object(s) with "name" and "parameters"
+        if not tool_calls:
+            # Try array format first
+            json_array_pattern = r'\[(\s*\{[^]]+\}(?:\s*,\s*\{[^]]+\})*)\s*\]'
+            array_matches = re.findall(json_array_pattern, response_text, re.DOTALL)
+            
+            if array_matches:
+                try:
+                    tools_array = json.loads(f"[{array_matches[0]}]")
+                    for tool_data in tools_array:
+                        if "name" in tool_data:
+                            tool_call = ToolCall(
+                                id=f"call_{uuid.uuid4().hex[:24]}",
+                                type="function",
+                                function=FunctionCall(
+                                    name=tool_data.get("name", ""),
+                                    arguments=json.dumps(tool_data.get("parameters", tool_data.get("arguments", {})))
+                                )
+                            )
+                            tool_calls.append(tool_call)
+                    if tool_calls:
+                        cleaned_text = re.sub(json_array_pattern, "", response_text, flags=re.DOTALL)
+                except json.JSONDecodeError:
+                    pass
+            
+            # Try single object format
+            if not tool_calls:
+                json_pattern = r'\{[^}]*"name"\s*:\s*"[^"]+"[^}]*\}'
+                json_matches = re.findall(json_pattern, response_text, re.DOTALL)
+                
+                for match in json_matches:
+                    try:
+                        tool_data = json.loads(match)
+                        if "name" in tool_data:
+                            tool_call = ToolCall(
+                                id=f"call_{uuid.uuid4().hex[:24]}",
+                                type="function",
+                                function=FunctionCall(
+                                    name=tool_data.get("name", ""),
+                                    arguments=json.dumps(tool_data.get("parameters", tool_data.get("arguments", {})))
+                                )
+                            )
+                            tool_calls.append(tool_call)
+                            cleaned_text = cleaned_text.replace(match, "")
+                    except json.JSONDecodeError:
+                        pass
+        
+        # 5. Try generic format: {"function": "...", "arguments": {...}}
+        if not tool_calls:
+            generic_pattern = r'\{\s*"function"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}'
+            generic_matches = re.findall(generic_pattern, response_text, re.DOTALL)
+            
+            for match in generic_matches:
+                try:
+                    tool_data = json.loads(match)
+                    tool_call = ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:24]}",
+                        type="function",
+                        function=FunctionCall(
+                            name=tool_data.get("function", ""),
+                            arguments=json.dumps(tool_data.get("arguments", {}))
+                        )
+                    )
+                    tool_calls.append(tool_call)
+                    cleaned_text = cleaned_text.replace(match, "")
+                except json.JSONDecodeError:
+                    pass
+        
+        # 6. Legacy format: {"tool_calls": [...]}
         if not tool_calls and "{" in response_text and "tool_calls" in response_text:
             try:
                 start = response_text.find("{")
@@ -183,24 +452,28 @@ def apply_stop_sequences(text: str, stop_sequences: List[str]) -> Tuple[str, boo
     """
     Apply stop sequences to generated text (post-processing workaround)
     
+    Performs case-insensitive matching for better compatibility.
+    
     Returns:
         Tuple of (processed_text, was_stopped)
     """
     if not stop_sequences or not text:
         return text, False
     
-    # Find the earliest occurrence of any stop sequence
+    # Find the earliest occurrence of any stop sequence (case-insensitive)
     earliest_pos = len(text)
     found_stop = None
+    text_lower = text.lower()
     
     for stop_seq in stop_sequences:
-        pos = text.find(stop_seq)
+        stop_seq_lower = stop_seq.lower()
+        pos = text_lower.find(stop_seq_lower)
         if pos != -1 and pos < earliest_pos:
             earliest_pos = pos
             found_stop = stop_seq
     
     if found_stop:
-        # Truncate at stop sequence
+        # Truncate at stop sequence (preserve original case)
         truncated = text[:earliest_pos].rstrip()
         return truncated, True
     
@@ -211,14 +484,14 @@ def apply_stop_sequences(text: str, stop_sequences: List[str]) -> Tuple[str, boo
 # Prompt Building
 # ============================================================================
 
-def build_chat_prompt(messages: List[ChatMessage], tools: Optional[List[ToolDefinition]] = None) -> str:
-    """Build a properly formatted chat prompt from messages (Qwen 2.5 compatible)"""
+def build_chat_prompt(messages: List[ChatMessage], tools: Optional[List[ToolDefinition]] = None, model_name: str = None) -> str:
+    """Build a properly formatted chat prompt from messages (model-aware)"""
     prompt_parts = []
     
     # Collect system messages and tools
     system_content = ""
     if tools:
-        system_content = format_tools_for_prompt(tools)
+        system_content = format_tools_for_prompt(tools, model_name)
     
     for msg in messages:
         role = msg.role

@@ -143,7 +143,8 @@ class RealtimeSession:
             prompt = build_chat_prompt(
                 [ChatMessage(role=msg["role"], content=msg["content"]) 
                  for msg in self.conversation_history],
-                tools=self.tools if self.tools else None
+                tools=self.tools if self.tools else None,
+                model_name=self.model_name
             )
             
             response_id = f"resp_{uuid.uuid4().hex[:12]}"
@@ -290,7 +291,7 @@ class RealtimeSession:
             final_text = response_text
             
             if self.tools:
-                cleaned_text, parsed_tool_calls = parse_tool_calls_from_response(response_text)
+                cleaned_text, parsed_tool_calls = parse_tool_calls_from_response(response_text, self.model_name)
                 if parsed_tool_calls:
                     tool_calls = parsed_tool_calls
                     final_text = cleaned_text
@@ -563,17 +564,28 @@ async def list_sessions(session_manager: SessionManager) -> Dict[str, Any]:
     """List all active sessions"""
     sessions = []
     for session_id, session in session_manager.sessions.items():
+        # Determine session status
+        status = "active"
+        if session.websocket is None:
+            status = "disconnected"
+        elif session.is_expired(session_manager.timeout_minutes):
+            status = "expired"
+        
         sessions.append({
             "id": session_id,
             "model": session.model_name,
+            "status": status,
             "created_at": session.created_at.isoformat() if hasattr(session.created_at, 'isoformat') else str(session.created_at),
+            "last_activity": session.last_activity.isoformat() if hasattr(session.last_activity, 'isoformat') else str(session.last_activity),
             "conversation_items": len(session.conversation_history),
-            "audio_buffer_size": len(session.audio_buffer)
+            "audio_buffer_size": len(session.audio_buffer),
+            "has_websocket": session.websocket is not None
         })
     
     return {
         "object": "list",
-        "sessions": sessions
+        "sessions": sessions,
+        "total": len(sessions)
     }
 
 
@@ -584,11 +596,20 @@ async def get_session(session_id: str, session_manager: SessionManager) -> Dict[
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     
+    # Determine session status
+    status = "active"
+    if session.websocket is None:
+        status = "disconnected"
+    elif session.is_expired(session_manager.timeout_minutes):
+        status = "expired"
+    
     return {
         "id": session.session_id,
         "object": "realtime.session",
         "model": session.model_name,
+        "status": status,
         "created_at": session.created_at,
+        "last_activity": session.last_activity,
         "modalities": ["text", "audio"],
         "instructions": "",
         "voice": "alloy",
@@ -597,7 +618,8 @@ async def get_session(session_id: str, session_manager: SessionManager) -> Dict[
         "turn_detection": None,
         "tools": session.tools or [],
         "conversation_items": len(session.conversation_history),
-        "audio_buffer_size": len(session.audio_buffer)
+        "audio_buffer_size": len(session.audio_buffer),
+        "has_websocket": session.websocket is not None
     }
 
 

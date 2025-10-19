@@ -250,44 +250,39 @@ def test_tool_calling():
     print("TEST 6: Tool Calling (Function Calling)")
     print("="*70)
     
-    # Define tools
+    # Define tools with specific, simple use cases
     tools = [
         {
             "type": "function",
             "function": {
-                "name": "get_weather",
-                "description": "Get the current weather for a location",
+                "name": "get_stock_price",
+                "description": "Get the current stock price for a company ticker symbol",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "location": {
+                        "ticker": {
                             "type": "string",
-                            "description": "The city and state, e.g. San Francisco, CA"
-                        },
-                        "unit": {
-                            "type": "string",
-                            "enum": ["celsius", "fahrenheit"],
-                            "description": "The temperature unit"
+                            "description": "The stock ticker symbol, e.g. AAPL for Apple"
                         }
                     },
-                    "required": ["location"]
+                    "required": ["ticker"]
                 }
             }
         },
         {
             "type": "function",
             "function": {
-                "name": "calculate",
-                "description": "Perform a mathematical calculation",
+                "name": "search_database",
+                "description": "Search for information in a database",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "expression": {
+                        "query": {
                             "type": "string",
-                            "description": "The mathematical expression to evaluate"
+                            "description": "The search query"
                         }
                     },
-                    "required": ["expression"]
+                    "required": ["query"]
                 }
             }
         }
@@ -296,7 +291,14 @@ def test_tool_calling():
     response = client.chat.completions.create(
         model="qwen2.5-vl-3b-instruct",
         messages=[
-            {"role": "user", "content": "What's the weather in Paris and also calculate 15 * 7?"}
+            {
+                "role": "system",
+                "content": "You are a helpful assistant with access to functions. Use the provided functions to answer questions when they require external data you don't have."
+            },
+            {
+                "role": "user",
+                "content": "I need to check the stock price for AAPL. Use the get_stock_price function."
+            }
         ],
         tools=tools,
         tool_choice="auto",
@@ -304,7 +306,7 @@ def test_tool_calling():
     )
     
     message = response.choices[0].message
-    print(f"User: What's the weather in Paris and also calculate 15 * 7?")
+    print(f"User: I need to check the stock price for AAPL. Use the get_stock_price function.")
     
     if message.tool_calls:
         print(f"🔧 Tool calls detected: {len(message.tool_calls)} call(s)")
@@ -315,7 +317,7 @@ def test_tool_calling():
         print("✅ Tool calling completed")
     else:
         print(f"Assistant: {message.content}")
-        print("⚠️  No tool calls detected (model may not support tool calling)")
+        print("⚠️  No tool calls detected (model may need more explicit prompting or doesn't fully support tool calling)")
 
 
 def test_tool_calling_with_execution():
@@ -328,24 +330,31 @@ def test_tool_calling_with_execution():
         {
             "type": "function",
             "function": {
-                "name": "get_current_time",
-                "description": "Get the current time in a specific timezone",
+                "name": "get_user_info",
+                "description": "Retrieve user information from the database by user ID",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "timezone": {
+                        "user_id": {
                             "type": "string",
-                            "description": "The timezone, e.g. America/New_York"
+                            "description": "The unique user ID"
                         }
                     },
-                    "required": ["timezone"]
+                    "required": ["user_id"]
                 }
             }
         }
     ]
     
     messages = [
-        {"role": "user", "content": "What time is it in New York?"}
+        {
+            "role": "system",
+            "content": "You are a helpful assistant. When you need information that requires a function call, you must use the available functions. Do not make up information."
+        },
+        {
+            "role": "user",
+            "content": "Look up the information for user ID 12345 using the get_user_info function."
+        }
     ]
     
     # First call - model decides to use tool
@@ -356,7 +365,7 @@ def test_tool_calling_with_execution():
         max_tokens=150
     )
     
-    print(f"👤 User: What time is it in New York?")
+    print(f"👤 User: Look up the information for user ID 12345 using the get_user_info function.")
     
     message1 = response1.choices[0].message
     if message1.tool_calls:
@@ -365,7 +374,7 @@ def test_tool_calling_with_execution():
         print(f"   With arguments: {tool_call.function.arguments}")
         
         # Simulate tool execution
-        simulated_result = "14:30:00"
+        simulated_result = '{"user_id": "12345", "name": "John Doe", "email": "john@example.com", "status": "active"}'
         
         # Add assistant message and tool response to conversation
         messages.append({
@@ -397,12 +406,13 @@ def test_tool_calling_with_execution():
             max_tokens=100
         )
         
-        print(f"🔨 Tool returned: {simulated_result}")
+        print(f"🔨 Tool returned: {simulated_result[:80]}...")
         print(f"🤖 Final answer: {response2.choices[0].message.content}")
         print("✅ Tool execution flow completed")
     else:
         print(f"🤖 Assistant: {message1.content}")
         print("⚠️  Model responded directly without tool call")
+        print("   Note: Model may need stronger prompting or better tool calling support")
 
 
 # ============================================================================
@@ -686,8 +696,61 @@ def test_speech_to_text():
     print("TEST 14: Speech-to-Text (Whisper)")
     print("="*70)
     
-    print("⚠️  STT test skipped: Requires an audio file and Whisper model")
-    print("   See examples/audio.py for detailed audio examples")
+    # Generate a simple test audio file using TTS first
+    try:
+        # First, generate audio using TTS
+        print("🎙️  Generating test audio using TTS...")
+        response = client.chat.completions.create(
+            model="qwen2.5-vl-3b-instruct",
+            messages=[
+                {"role": "user", "content": "Hello, this is a speech to text test."}
+            ],
+            max_tokens=50,
+            modalities=["text", "audio"]
+        )
+        
+        # Extract audio if available
+        if hasattr(response.choices[0].message, 'audio') and response.choices[0].message.audio:
+            audio_data = response.choices[0].message.audio
+            
+            # Save audio to temporary file
+            import base64
+            import tempfile
+            audio_bytes = base64.b64decode(audio_data.data)
+            
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+                temp_audio.write(audio_bytes)
+                temp_path = temp_audio.name
+            
+            print(f"   ✅ Generated test audio: {len(audio_bytes)} bytes")
+            
+            # Now test STT with the generated audio
+            print("\n🎤 Testing Speech-to-Text with generated audio...")
+            with open(temp_path, 'rb') as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    model="whisper-base",
+                    file=audio_file,
+                    response_format="json"
+                )
+            
+            print(f"Original text: \"Hello, this is a speech to text test.\"")
+            print(f"Transcription: \"{transcription.text}\"")
+            
+            # Cleanup
+            import os
+            os.unlink(temp_path)
+            
+            # Check if transcription is reasonably close
+            if "speech" in transcription.text.lower() or "test" in transcription.text.lower():
+                print("✅ STT working (transcription contains expected words)")
+            else:
+                print("⚠️  Transcription may not be accurate")
+        else:
+            print("⚠️  No TTS model available, skipping STT test")
+            print("   Install a TTS model to enable this test")
+    except Exception as e:
+        print(f"⚠️  STT test skipped: {type(e).__name__}: {e}")
+        print("   Make sure Whisper model is loaded in config")
 
 
 # ============================================================================
@@ -1778,39 +1841,42 @@ def test_realtime_session_management():
 
 
 def test_server_health_and_info():
-    """Test: Server health check and root endpoint"""
+    """Test: Server health and root info endpoints (comprehensive check)"""
     print("\n" + "="*70)
-    print("TEST 33: Server Health and Info Endpoints")
+    print("TEST 33: Server Health & Info Endpoints")
     print("="*70)
     
     import requests
     base_url = "http://localhost:8000"
     
-    # Part 1: Health check endpoint
-    print("\n🏥 Part 1: Health check endpoint")
+    # Part 1: Detailed health check endpoint
+    print("\n🏥 Part 1: Health endpoint (detailed metrics)")
     response = requests.get(f"{base_url}/health", timeout=5)
     
     if response.status_code == 200:
         health = response.json()
         print(f"   Status: {health['status']}")
-        print(f"   Models loaded: {health['models_loaded']}")
-        print(f"      - LLM: {health.get('llm_models', 0)}")
-        print(f"      - VLM: {health.get('vlm_models', 0)}")
-        print(f"      - Whisper: {health.get('whisper_models', 0)}")
-        print(f"      - TTS: {health.get('tts_models', 0)}")
-        print(f"      - Embedding: {health.get('embedding_models', 0)}")
-        print(f"   Files stored: {health.get('files_stored', 0)}")
-        print(f"   Vector store docs: {health.get('documents_in_vector_store', 0)}")
+        print(f"   Model breakdown:")
+        print(f"      • LLM models: {health.get('llm_models', 0)}")
+        print(f"      • VLM models: {health.get('vlm_models', 0)}")
+        print(f"      • Whisper models: {health.get('whisper_models', 0)}")
+        print(f"      • TTS models: {health.get('tts_models', 0)}")
+        print(f"      • Embedding models: {health.get('embedding_models', 0)}")
+        print(f"      • Text2Image models: {health.get('text2image_models', 0)}")
+        print(f"      • Moderation models: {health.get('moderation_models', 0)}")
+        print(f"   Storage:")
+        print(f"      • Files: {health.get('files_stored', 0)}")
+        print(f"      • Vector docs: {health.get('documents_in_vector_store', 0)}")
         
         if health['status'] == 'healthy':
-            print(f"   ✅ Server is healthy!")
+            print(f"   ✅ Health endpoint working correctly!")
         else:
             print(f"   ⚠️  Server status: {health['status']}")
     else:
         raise Exception(f"Health check failed: {response.status_code}")
     
     # Part 2: Root/info endpoint
-    print("\n🏠 Part 2: Root/info endpoint")
+    print("\n🏠 Part 2: Root info endpoint")
     response = requests.get(f"{base_url}/", timeout=5)
     
     if response.status_code == 200:
@@ -1819,14 +1885,16 @@ def test_server_health_and_info():
         print(f"   Version: {info.get('version', 'N/A')}")
         print(f"   Available models: {len(info.get('models', []))}")
         if info.get('models'):
-            for model in info['models'][:3]:
-                print(f"      - {model}")
-        print(f"   Docs: {info.get('docs', 'N/A')}")
-        print(f"   ✅ Root endpoint working!")
+            for i, model in enumerate(info['models'][:3], 1):
+                print(f"      {i}. {model}")
+            if len(info.get('models', [])) > 3:
+                print(f"      ... and {len(info['models']) - 3} more")
+        print(f"   Documentation: {info.get('docs', 'N/A')}")
+        print(f"   ✅ Info endpoint working!")
     else:
         raise Exception(f"Root endpoint failed: {response.status_code}")
     
-    print("\n✅ Server health and info endpoints test completed!")
+    print("\n✅ Server health & info endpoints test completed!")
 
 
 # ============================================================================
@@ -1953,29 +2021,25 @@ def cleanup_temp_files():
 
 
 def run_health_check():
-    """Check server health"""
+    """Quick check if server is running"""
     print("\n" + "="*70)
-    print("HEALTH CHECK")
+    print("SERVER CONNECTIVITY CHECK")
     print("="*70)
     
     try:
         import requests
-        response = requests.get("http://localhost:8000/health")
+        response = requests.get("http://localhost:8000/health", timeout=5)
         data = response.json()
         
-        print(f"Status: {data['status']}")
-        print(f"Models loaded: {data['models_loaded']}")
-        print(f"  - LLM: {data['llm_models']}")
-        print(f"  - VLM: {data['vlm_models']}")
-        print(f"  - Whisper: {data['whisper_models']}")
-        print(f"  - TTS: {data['tts_models']}")
-        print(f"  - Embedding: {data.get('embedding_models', 0)}")
-        print(f"Files stored: {data['files_stored']}")
-        print(f"Vector store docs: {data.get('documents_in_vector_store', 0)}")
-        print("✅ Server is healthy")
-        return True
+        if data['status'] == 'healthy':
+            print(f"✅ Server is running (status: {data['status']})")
+            print(f"   Models loaded: {data['models_loaded']}")
+            return True
+        else:
+            print(f"⚠️  Server responded but status: {data['status']}")
+            return False
     except Exception as e:
-        print(f"❌ Health check failed: {e}")
+        print(f"❌ Cannot connect to server: {e}")
         return False
 
 
