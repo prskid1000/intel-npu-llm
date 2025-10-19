@@ -50,19 +50,32 @@ def create_error_response(
 # ============================================================================
 
 def format_tools_for_prompt(tools: List[ToolDefinition]) -> str:
-    """Format tools/functions for inclusion in the prompt"""
+    """Format tools/functions for inclusion in the prompt (Qwen 2.5 VL compatible format)"""
     if not tools:
         return ""
     
-    tools_description = "\n\n# Tools\n\nYou have access to the following tools:\n\n"
+    # Format tools in Qwen-compatible JSON format
+    tools_list = []
     for tool in tools:
         func = tool.function
-        tools_description += f"- {func.name}: {func.description or 'No description'}\n"
-        if func.parameters:
-            tools_description += f"  Parameters: {json.dumps(func.parameters, indent=2)}\n"
+        tool_dict = {
+            "type": "function",
+            "function": {
+                "name": func.name,
+                "description": func.description or "No description provided",
+                "parameters": func.parameters or {}
+            }
+        }
+        tools_list.append(tool_dict)
     
-    tools_description += "\nTo use a tool, respond with a JSON object in this format:\n"
-    tools_description += '{"tool_calls": [{"name": "function_name", "arguments": {...}}]}\n'
+    # Qwen format: Clear, structured tool description with examples
+    tools_description = "\n\n# Available Tools\n\n"
+    tools_description += "You have access to the following functions. Use them when necessary:\n\n"
+    tools_description += f"{json.dumps(tools_list, indent=2)}\n\n"
+    tools_description += "To call a function, respond with:\n"
+    tools_description += '<tool_call>\n{"name": "function_name", "arguments": {"param": "value"}}\n</tool_call>\n\n'
+    tools_description += "You can call multiple functions by using multiple <tool_call> tags.\n"
+    tools_description += "After receiving function results, use them to answer the user's question.\n"
     
     return tools_description
 
@@ -163,24 +176,60 @@ def extract_json_from_response(response_text: str) -> Optional[str]:
 
 
 # ============================================================================
+# Stop Sequence Handling
+# ============================================================================
+
+def apply_stop_sequences(text: str, stop_sequences: List[str]) -> Tuple[str, bool]:
+    """
+    Apply stop sequences to generated text (post-processing workaround)
+    
+    Returns:
+        Tuple of (processed_text, was_stopped)
+    """
+    if not stop_sequences or not text:
+        return text, False
+    
+    # Find the earliest occurrence of any stop sequence
+    earliest_pos = len(text)
+    found_stop = None
+    
+    for stop_seq in stop_sequences:
+        pos = text.find(stop_seq)
+        if pos != -1 and pos < earliest_pos:
+            earliest_pos = pos
+            found_stop = stop_seq
+    
+    if found_stop:
+        # Truncate at stop sequence
+        truncated = text[:earliest_pos].rstrip()
+        return truncated, True
+    
+    return text, False
+
+
+# ============================================================================
 # Prompt Building
 # ============================================================================
 
 def build_chat_prompt(messages: List[ChatMessage], tools: Optional[List[ToolDefinition]] = None) -> str:
-    """Build a properly formatted chat prompt from messages"""
+    """Build a properly formatted chat prompt from messages (Qwen 2.5 compatible)"""
     prompt_parts = []
     
-    # Add tools description if provided
+    # Collect system messages and tools
+    system_content = ""
     if tools:
-        tools_info = format_tools_for_prompt(tools)
-        prompt_parts.append(f"<|im_start|>system\n{tools_info}<|im_end|>\n")
+        system_content = format_tools_for_prompt(tools)
     
     for msg in messages:
         role = msg.role
         
         if role == "system":
             content = msg.content if isinstance(msg.content, str) else ""
-            prompt_parts.append(f"<|im_start|>system\n{content}<|im_end|>\n")
+            if system_content:
+                # Merge system message with tools
+                system_content = content + "\n" + system_content
+            else:
+                system_content = content
         
         elif role == "user":
             if isinstance(msg.content, str):
@@ -196,15 +245,21 @@ def build_chat_prompt(messages: List[ChatMessage], tools: Optional[List[ToolDefi
         elif role == "assistant":
             content = msg.content if isinstance(msg.content, str) else ""
             
+            # Format tool calls in Qwen format
             if msg.tool_calls:
                 for tc in msg.tool_calls:
-                    content += f"\n<tool_call>\n{{'name': '{tc.function.name}', 'arguments': {tc.function.arguments}}}\n</tool_call>"
+                    content += f"\n<tool_call>\n{json.dumps({'name': tc.function.name, 'arguments': json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments})}\n</tool_call>"
             
             prompt_parts.append(f"<|im_start|>assistant\n{content}<|im_end|>\n")
         
         elif role == "tool":
             content = msg.content if isinstance(msg.content, str) else ""
-            prompt_parts.append(f"<|im_start|>user\n<tool_response>\n{content}\n</tool_response><|im_end|>\n")
+            tool_call_id = getattr(msg, 'tool_call_id', 'unknown')
+            prompt_parts.append(f"<|im_start|>user\n<tool_response id=\"{tool_call_id}\">\n{content}\n</tool_response><|im_end|>\n")
+    
+    # Add system content at the beginning if present
+    if system_content:
+        prompt_parts.insert(0, f"<|im_start|>system\n{system_content}<|im_end|>\n")
     
     prompt_parts.append("<|im_start|>assistant\n")
     

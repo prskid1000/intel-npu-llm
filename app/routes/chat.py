@@ -31,7 +31,8 @@ from ..utils import (
     parse_tool_calls_from_response,
     validate_json_schema,
     extract_json_from_response,
-    extract_content_parts
+    extract_content_parts,
+    apply_stop_sequences
 )
 
 if TYPE_CHECKING:
@@ -229,6 +230,14 @@ async def chat_completions_non_streaming(
         else:
             raise HTTPException(status_code=500, detail=f"Generation failed: {error_msg}")
     
+    # Apply stop sequences if configured (post-processing workaround for OpenVINO GenAI)
+    was_stopped = False
+    if request.stop:
+        stop_strings = [request.stop] if isinstance(request.stop, str) else request.stop
+        response_text, was_stopped = apply_stop_sequences(response_text, stop_strings)
+        if was_stopped:
+            print(f"🛑 Stop sequence triggered, truncated response")
+    
     # Parse response
     tool_calls = None
     finish_reason = "stop"
@@ -294,8 +303,16 @@ async def chat_completions_non_streaming(
         tts_models = list(model_manager.tts_pipelines.keys())
         if tts_models:
             try:
-                tts_pipeline = model_manager.tts_pipelines[tts_models[0]]
+                tts_model_name = tts_models[0]
+                tts_pipeline = model_manager.tts_pipelines[tts_model_name]
                 text_to_speak = final_content or response_text
+                
+                # Limit text length for TTS (prevent timeout)
+                if len(text_to_speak) > 500:
+                    text_to_speak = text_to_speak[:500] + "..."
+                    print(f"⚠️  TTS: Text truncated to 500 chars for performance")
+                
+                print(f"🔊 Generating audio with {tts_model_name}...")
                 
                 # Generate audio
                 audio_result = tts_pipeline.generate(text_to_speak)
@@ -315,8 +332,16 @@ async def chat_completions_non_streaming(
                     data=audio_base64,
                     transcript=text_to_speak
                 )
+                print(f"✅ Audio generated: {len(audio_base64)} bytes (base64)")
+            except ImportError as e:
+                print(f"⚠️  Audio generation skipped: Missing dependency - {e}")
+                print(f"    Install: pip install soundfile")
             except Exception as e:
-                print(f"⚠️  Warning: Could not generate audio: {e}")
+                print(f"⚠️  Audio generation failed: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"⚠️  Audio output requested but no TTS model loaded")
     
     return ChatCompletionResponse(
         id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
