@@ -51,7 +51,7 @@ Edit `config.json`:
   "models": [
     {
       "name": "qwen2.5-3b",
-      "path": "models/Qwen/Qwen2.5-3B",
+      "path": "models/VLLM/Qwen2.5-3B",
       "device": "NPU",
       "type": "llm"
     }

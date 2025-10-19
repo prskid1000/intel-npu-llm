@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-OpenVINO Phi-3.5-Vision Model Conversion Script
-Based on: https://docs.openvino.ai/2024/notebooks/phi-3-vision-with-output.html
+OpenVINO Qwen2.5-VL Model Conversion Script
+Based on: https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
 
-This script converts Phi-3.5-Vision-Instruct to OpenVINO format with INT4 quantization
+This script converts Qwen2.5-VL-3B-Instruct to OpenVINO format with INT4 quantization
 for optimal NPU performance.
 """
 
@@ -11,16 +11,16 @@ import sys
 from pathlib import Path
 import warnings
 
-def convert_phi3_vision():
-    """Convert Phi-3.5-Vision model to OpenVINO INT4 format"""
+def convert_qwen2_5_vl():
+    """Convert Qwen2.5-VL model to OpenVINO INT4 format"""
     
     print("=" * 60)
-    print("Phi-3.5-Vision OpenVINO Conversion")
+    print("Qwen2.5-VL OpenVINO Conversion")
     print("=" * 60)
     print()
     
-    model_id = "microsoft/Phi-3.5-vision-instruct"
-    out_dir = Path("models/VLLM/Phi-3.5-vision-instruct")
+    model_id = "Qwen/Qwen2.5-VL-3B-Instruct"
+    out_dir = Path("models/VLLM/Qwen2.5-VL-3B-Instruct")
     
     print(f"Source Model: {model_id}")
     print(f"Output Directory: {out_dir}")
@@ -94,24 +94,28 @@ def convert_phi3_vision():
         tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
         tokenizer.save_pretrained(out_dir)
         
-        # Download and save processor (includes image processor)
+        # Download and save processor (includes image processor for Qwen2.5-VL)
         try:
+            print("   Downloading processor (for image/video processing)...")
             processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
             processor.save_pretrained(out_dir)
+            print("   ✓ Processor saved (supports dynamic resolution)")
         except Exception as e:
             print(f"   Note: Could not save processor: {e}")
         
         print("   ✓ HuggingFace tokenizer files saved")
         
-        # Add chat template if missing
+        # Add/verify chat template for Qwen format
         tokenizer_config_path = out_dir / "tokenizer_config.json"
         if tokenizer_config_path.exists():
             with open(tokenizer_config_path, 'r', encoding='utf-8') as f:
                 tokenizer_config = json.load(f)
             
+            # Qwen2.5-VL uses a specific chat template format
             if 'chat_template' not in tokenizer_config:
-                print("   Adding chat template...")
-                tokenizer_config['chat_template'] = "{% for message in messages %}{{'<|' + message['role'] + '|>' + '\\n' + message['content'] + '<|end|>\\n' }}{% endfor %}{% if add_generation_prompt and messages[-1]['role'] != 'assistant' %}{{- '<|assistant|>\\n' -}}{% endif %}"
+                print("   Adding Qwen chat template...")
+                # Qwen2.5 chat template format
+                tokenizer_config['chat_template'] = "{% for message in messages %}{% if loop.first and message['role'] != 'system' %}<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n{% endif %}<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>\n{% endfor %}{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
                 
                 with open(tokenizer_config_path, 'w', encoding='utf-8') as f:
                     json.dump(tokenizer_config, f, indent=2, ensure_ascii=False)
@@ -218,9 +222,20 @@ def convert_phi3_vision():
     print()
     print(f"Model saved to: {out_dir}")
     print()
+    print("Model Features:")
+    print("  • Multi-modal: Image and video understanding")
+    print("  • Dynamic resolution: 256-1280 token range")
+    print("  • Vision capabilities: OCR, charts, icons, layouts")
+    print("  • Video: Support for long videos (1+ hours)")
+    print()
     print("Next steps:")
     print("  1. Update your config.json to use this model")
     print("  2. Run: python npu.py")
+    print()
+    print("Note: Qwen2.5-VL supports:")
+    print("  - Image input (local files, URLs, base64)")
+    print("  - Video input (local files)")
+    print("  - Dynamic resolution (min_pixels, max_pixels)")
     print()
     
     return True
@@ -229,7 +244,7 @@ def convert_phi3_vision():
 if __name__ == "__main__":
     warnings.filterwarnings('ignore')
     
-    success = convert_phi3_vision()
+    success = convert_qwen2_5_vl()
     
     if not success:
         print()
@@ -237,4 +252,5 @@ if __name__ == "__main__":
         sys.exit(1)
     
     sys.exit(0)
+
 

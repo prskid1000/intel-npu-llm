@@ -17,6 +17,8 @@ class ModelConfig(BaseModel):
     path: str
     device: str = "NPU"  # NPU, CPU, or GPU
     type: str = "llm"  # llm, vlm, embedding, whisper, tts, text2image, or moderation
+    description: Optional[str] = None
+    num_inference_steps: Optional[int] = 20  # For text2image models
 
 
 class ServerConfig(BaseModel):

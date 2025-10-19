@@ -10,14 +10,12 @@ import time
 from pathlib import Path
 
 # Import individual converters
-from convert_phi3_vision import convert_phi3_vision
-from convert_deepseek_vl import convert_deepseek_vl
+from convert_qwen2_5_vl import convert_qwen2_5_vl
 from convert_embeddings import convert_embeddings
 from convert_whisper import convert_whisper
-from convert_tts import convert_tts
-from convert_text2image import convert_text2image
 from convert_ssd1b import convert_ssd1b
 from convert_moderation import convert_moderation
+from convert_tts import convert_tts
 
 
 def print_header():
@@ -28,13 +26,13 @@ def print_header():
     print("=" * 70)
     print()
     print("This will convert all models needed for full OpenAI API compatibility:")
-    print("  1. Phi-3.5-Vision (LLM + VLM) - Text chat & vision")
-    print("  3. BGE-small-en-v1.5 (Embeddings) - RAG & vector search")
-    print("  4. Whisper-base (STT) - Speech-to-text")
-    print("  5. SpeechT5 (TTS) - Text-to-speech")
-    print("  6. Stable Diffusion 1.5 (Text2Image) - Image generation")
-    print("  7. SSD-1B (Text2Image) - Fast image generation")
-    print("  8. Toxic-BERT (Moderation) - Content safety")
+    print("  Qwen2.5-3B (LLM) - Text chat")
+    print("  BGE-small-en-v1.5 (Embeddings) - RAG & vector search")
+    print("  Whisper-base (STT) - Speech-to-text")
+    print("  SpeechT5 (TTS) - Text-to-speech")
+    print("  Stable Diffusion 1.5 (Text2Image) - Image generation")
+    print("  SSD-1B (Text2Image) - Fast image generation")
+    print("  Toxic-BERT (Moderation) - Content safety")
     print()
     print("Device Support: CPU/NPU - No GPU required!")
     print()
@@ -101,11 +99,10 @@ def main():
     
     # Model conversion sequence
     conversions = [
-        ("Phi-3.5-Vision (LLM+VLM)", convert_phi3_vision),
+        ("LLM (Qwen2.5-3B)", convert_qwen2_5_vl),
         ("Embeddings (BGE-small-en-v1.5)", convert_embeddings),
         ("Whisper (Speech-to-Text)", convert_whisper),
         ("TTS (SpeechT5)", convert_tts),
-        ("Text2Image (Stable Diffusion 1.5)", convert_text2image),
         ("Text2Image (SSD-1B)", convert_ssd1b),
         ("Moderation (Toxic-BERT)", convert_moderation),
     ]

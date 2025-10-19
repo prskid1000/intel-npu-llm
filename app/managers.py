@@ -66,33 +66,40 @@ class ModelManager:
                     self.embedding_pipelines[model_config.name] = compiled_model
                 
                 elif model_config.type == "text2image":
+                    # Detect SDXL vs SD 1.5 by checking for text_encoder_2
+                    model_path = Path(model_config.path)
+                    is_sdxl = (model_path / "text_encoder_2").exists()
+                    
                     try:
-                        # Use optimum.intel.OVPipelineForText2Image instead of ov_genai.Text2ImagePipeline
-                        # to avoid dtype compatibility issues with tokenizers
-                        from optimum.intel import OVStableDiffusionPipeline
-                        pipeline = OVStableDiffusionPipeline.from_pretrained(
-                            model_config.path,
-                            device=model_config.device,
-                            compile=True
-                        )
-                        self.text2image_pipelines[model_config.name] = pipeline
-                    except Exception as e:
-                        try:
+                        if is_sdxl:
+                            print(f"   Detected SDXL architecture (dual text encoders)")
                             from optimum.intel import OVStableDiffusionXLPipeline
                             pipeline = OVStableDiffusionXLPipeline.from_pretrained(
                                 model_config.path,
                                 device=model_config.device,
                                 compile=True
                             )
-                            self.text2image_pipelines[model_config.name] = pipeline
-                        except Exception as e:
-                            print(f"⚠️  Warning: Could not load Text2Image XL pipeline: {e}")
-                            print(f"   Trying fallback method...")
+                        else:
+                            print(f"   Detected SD 1.5 architecture")
+                            from optimum.intel import OVStableDiffusionPipeline
+                            pipeline = OVStableDiffusionPipeline.from_pretrained(
+                                model_config.path,
+                                device=model_config.device,
+                                compile=True
+                            )
+                        self.text2image_pipelines[model_config.name] = pipeline
+                    except Exception as e:
+                        print(f"⚠️  Warning: Could not load Text2Image pipeline: {e}")
+                        print(f"   Trying fallback method...")
+                        try:
                             core = ov.Core()
-                            model_path = Path(model_config.path) / "openvino_model.xml"
-                            model = core.read_model(model=str(model_path))
+                            unet_path = Path(model_config.path) / "unet" / "openvino_model.xml"
+                            model = core.read_model(model=str(unet_path))
                             compiled_model = core.compile_model(model, model_config.device)
                             self.text2image_pipelines[model_config.name] = compiled_model
+                        except Exception as fallback_e:
+                            print(f"⚠️  Fallback also failed: {fallback_e}")
+                            raise
                 
                 elif model_config.type == "moderation":
                     core = ov.Core()

@@ -6,10 +6,24 @@
   "models": [
     {
       "name": "phi-3.5-vision",
-      "path": "models/Phi/Phi-3.5-vision-instruct",
+      "path": "models/VLLM/Phi-3.5-vision-instruct",
       "device": "NPU",
       "type": "vlm",
       "description": "Unified multimodal model - handles text chat, completions, tool calling, AND vision tasks (4B params, 128K context)"
+    },
+    {
+      "name": "qwen2.5-3b",
+      "path": "models/VLLM/Qwen2.5-3B",
+      "device": "NPU",
+      "type": "llm",
+      "description": "Qwen2.5-3B - Text chat"
+    },
+    {
+      "name": "qwen2.5-vl-3b-instruct",
+      "path": "models/VLLM/Qwen2.5-VL-3B-Instruct",
+      "device": "NPU",
+      "type": "vlm",
+      "description": "Qwen2.5-VL-3B-Instruct - Text chat & vision"
     },
     {
       "name": "text-embedding-model",
@@ -37,7 +51,16 @@
       "path": "models/Text2Image/sd-1.5",
       "device": "GPU",
       "type": "text2image",
-      "description": "Stable Diffusion 1.5 - CPU inference (slower but no GPU needed)"
+      "description": "SD 1.5 - GPU inference",
+      "num_inference_steps": 20
+    },
+    {
+      "name": "sdxl-turbo",
+      "path": "models/Text2Image/SSD-1B",
+      "device": "CPU",
+      "type": "text2image",
+      "description": "SDXL Turbo - CPU inference",
+      "num_inference_steps": 6
     },
     {
       "name": "moderation-model",

@@ -65,6 +65,10 @@ async def create_image(request: ImageGenerationRequest) -> ImageResponse:
             if len(size_parts) == 2:
                 width, height = int(size_parts[0]), int(size_parts[1])
         
+        # Get model config for num_inference_steps
+        model_config = model_manager.model_configs.get(model_name)
+        num_inference_steps = model_config.num_inference_steps if model_config else 20
+        
         for i in range(request.n):
             try:
                 # OVStableDiffusionPipeline uses __call__ method and returns PIL images
@@ -74,7 +78,7 @@ async def create_image(request: ImageGenerationRequest) -> ImageResponse:
                         prompt=request.prompt,
                         height=height,
                         width=width,
-                        num_inference_steps=20,
+                        num_inference_steps=num_inference_steps,
                         num_images_per_prompt=1
                     )
                     # Result is a dict with 'images' key containing PIL Image list
@@ -181,6 +185,10 @@ async def create_image_edit(
             if len(parts) == 2:
                 width, height = int(parts[0]), int(parts[1])
         
+        # Get model config for num_inference_steps
+        model_config = model_manager.model_configs.get(model)
+        num_inference_steps = model_config.num_inference_steps if model_config else 20
+        
         images_data = []
         
         for i in range(n):
@@ -191,7 +199,7 @@ async def create_image_edit(
                     prompt=prompt,
                     height=height,
                     width=width,
-                    num_inference_steps=20,
+                    num_inference_steps=num_inference_steps,
                     num_images_per_prompt=1
                 )
                 result_image = result.images[0] if hasattr(result, 'images') else result['images'][0]

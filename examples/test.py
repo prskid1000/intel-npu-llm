@@ -42,7 +42,7 @@ def test_basic_chat():
     # Test 1: Text-only request
     print("\n📝 Part 1: Text-only chat")
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {"role": "system", "content": "You are a helpful AI assistant."},
             {"role": "user", "content": "What is OpenVINO in one sentence?"}
@@ -74,7 +74,7 @@ def test_basic_chat():
     img_base64 = base64.b64encode(img_bytes.read()).decode('utf-8')
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {
                 "role": "user",
@@ -104,7 +104,7 @@ def test_streaming():
     print("Assistant: ", end="", flush=True)
     
     stream = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {"role": "user", "content": "Count from 1 to 5, one number per line"}
         ],
@@ -132,7 +132,7 @@ def test_streaming():
     print("Assistant: ", end="", flush=True)
     
     stream = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {
                 "role": "user",
@@ -160,7 +160,7 @@ def test_text_completion():
     print("="*70)
     
     response = client.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         prompt="The three laws of robotics are:",
         max_tokens=100,
         temperature=0.7
@@ -184,7 +184,7 @@ def test_multi_turn_conversation():
     
     # First turn (text-only)
     response1 = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=messages,
         max_tokens=50
     )
@@ -197,7 +197,7 @@ def test_multi_turn_conversation():
     messages.append({"role": "user", "content": "What's my name?"})
     
     response2 = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=messages,
         max_tokens=30
     )
@@ -230,7 +230,7 @@ def test_multi_turn_conversation():
     })
     
     response3 = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=messages,
         max_tokens=50
     )
@@ -294,7 +294,7 @@ def test_tool_calling():
     ]
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {"role": "user", "content": "What's the weather in Paris and also calculate 15 * 7?"}
         ],
@@ -350,7 +350,7 @@ def test_tool_calling_with_execution():
     
     # First call - model decides to use tool
     response1 = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=messages,
         tools=tools,
         max_tokens=150
@@ -391,7 +391,7 @@ def test_tool_calling_with_execution():
         
         # Second call - model uses tool result
         response2 = client.chat.completions.create(
-            model="phi-3.5-vision",
+            model="qwen2.5-vl-3b-instruct",
             messages=messages,
             tools=tools,
             max_tokens=100
@@ -416,7 +416,7 @@ def test_json_mode():
     print("="*70)
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {
                 "role": "system",
@@ -467,7 +467,7 @@ def test_json_schema():
     
     try:
         response = client.chat.completions.create(
-            model="phi-3.5-vision",
+            model="qwen2.5-vl-3b-instruct",
             messages=[
                 {
                     "role": "system",
@@ -539,7 +539,7 @@ Intel Core Ultra processors, delivering high-performance, power-efficient AI inf
     
     # Ask question about the document
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {
                 "role": "user",
@@ -722,7 +722,7 @@ def test_vision_multimodal():
     
     # Test VLM with image
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {
                 "role": "user",
@@ -763,7 +763,7 @@ def test_image_generation():
     response = requests.post(
         "http://localhost:8000/v1/images/generations",
         json={
-            "model": "stable-diffusion",  # Update with your model name
+            "model": "sdxl-turbo",  # Update with your model name
             "prompt": "A beautiful sunset over mountains, digital art",
             "n": 1,
             "size": "512x512",
@@ -837,7 +837,7 @@ def test_seed_reproducibility():
     
     # Generate twice with same seed
     response1 = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=prompt_messages,
         seed=12345,
         temperature=0.7,
@@ -845,7 +845,7 @@ def test_seed_reproducibility():
     )
     
     response2 = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=prompt_messages,
         seed=12345,
         temperature=0.7,
@@ -871,7 +871,7 @@ def test_stop_sequences():
     print("="*70)
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {"role": "user", "content": "List the days of the week"}
         ],
@@ -896,7 +896,7 @@ def test_system_fingerprint():
     print("="*70)
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {"role": "user", "content": "Hello!"}
         ],
@@ -927,7 +927,7 @@ def test_voice_chat_rest_api():
         import tempfile
         
         WHISPER_MODEL = "whisper-base"
-        LLM_MODEL = "phi-3.5-vision"
+        LLM_MODEL = "qwen2.5-vl-3b-instruct"
         TTS_MODEL = "speecht5-tts"
         SAMPLE_RATE = 16000
         DURATION = 3  # seconds for test
@@ -1034,7 +1034,7 @@ def test_voice_chat_realtime_websocket():
         import websockets
         
         async def test_realtime():
-            WS_URL = "ws://localhost:8000/v1/realtime?model=phi-3.5-vision"
+            WS_URL = "ws://localhost:8000/v1/realtime?model=qwen2.5-vl-3b-instruct"
             
             print("🔌 Connecting to WebSocket...")
             
@@ -1343,7 +1343,7 @@ def test_logprobs():
     print("="*70)
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {"role": "user", "content": "Count to five: 1, 2,"}
         ],
@@ -1390,7 +1390,7 @@ def test_multimodal_audio_output():
     print("-" * 70)
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {"role": "user", "content": "Say hello in exactly 5 words."}
         ],
@@ -1443,7 +1443,7 @@ def test_multimodal_audio_output():
     img_base64 = base64.b64encode(img_bytes.read()).decode('utf-8')
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {
                 "role": "user",
@@ -1473,7 +1473,7 @@ def test_multimodal_audio_output():
     print("-" * 70)
     
     response = client.chat.completions.create(
-        model="phi-3.5-vision",
+        model="qwen2.5-vl-3b-instruct",
         messages=[
             {"role": "user", "content": "What is 2+2?"}
         ],
@@ -1675,7 +1675,7 @@ def test_realtime_session_management():
         import websockets
         
         base_url = "http://localhost:8000"
-        ws_url = "ws://localhost:8000/v1/realtime?model=phi-3.5-vision"
+        ws_url = "ws://localhost:8000/v1/realtime?model=qwen2.5-vl-3b-instruct"
         session_id = None
         
         async def create_session():
