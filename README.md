@@ -36,6 +36,30 @@ response = client.chat.completions.create(
 
 That's it! 🚀
 
+### Web UI (Gradio Interface)
+
+Access all features through a beautiful web interface:
+
+```bash
+# Start the server first (in one terminal)
+python npu.py
+
+# Then start Gradio interface (in another terminal)
+python gradio_interface.py
+```
+
+The interface will be available at `http://localhost:7860` with tabs for:
+- 💬 Chat & Completions (with streaming)
+- 👁️ Vision Chat (multimodal with images)
+- 🎤 Audio (speech-to-text and text-to-speech)
+- 🎨 Image Generation (generate, edit, variations)
+- 📊 Embeddings
+- 🛡️ Content Moderation
+- 📁 File Management
+- 🗄️ Vector Store (RAG)
+
+You can also access the API docs at `http://localhost:8000/docs`
+
 ---
 
 ## Configuration

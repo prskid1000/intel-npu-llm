@@ -7,7 +7,7 @@
     {
       "name": "qwen2.5-vl-3b-instruct",
       "path": "models/VLLM/Qwen2.5-VL-3B-Instruct",
-      "device": "NPU",
+      "device": "GPU",
       "type": "vlm",
       "description": "Qwen2.5-VL-3B-Instruct - Text chat & vision"
     },
