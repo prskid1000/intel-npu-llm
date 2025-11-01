@@ -1,4 +1,6 @@
-# OpenVINO GenAI API Server
+# OpenVINO GenAI API Server + Gradio Interface
+
+
 
 **100% OpenAI-compatible API server** running **100% locally** on Intel NPU/CPU/GPU.
 
@@ -45,7 +47,7 @@ Access all features through a beautiful web interface:
 python npu.py
 
 # Then start Gradio interface (in another terminal)
-python gradio_interface.py
+python ui.py
 ```
 
 The interface will be available at `http://localhost:7860` with tabs for:
