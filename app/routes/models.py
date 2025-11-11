@@ -29,17 +29,22 @@ def set_model_manager(manager):
 @router.get("/v1/models")
 async def list_models() -> ModelListResponse:
     """List available models (OpenAI-compatible)"""
-    models = [
-        ModelInfo(
+    models = []
+    for model_name in model_manager.list_models():
+        model_config = model_manager.model_configs.get(model_name)
+        model_type = model_manager.get_model_type(model_name) if model_config else "unknown"
+        
+        model_info = ModelInfo(
             id=model_name,
             created=int(time.time()),
             owned_by="local",
             permission=[],
             root=model_name,
-            parent=None
+            parent=None,
+            capabilities={"type": model_type} if model_type != "unknown" else None
         )
-        for model_name in model_manager.list_models()
-    ]
+        
+        models.append(model_info)
     return ModelListResponse(data=models)
 
 

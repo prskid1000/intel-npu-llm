@@ -213,17 +213,22 @@ def format_tools_for_prompt(tools: List[ToolDefinition], model_name: str = None)
     # Detect model family
     model_family = detect_model_family(model_name) if model_name else 'generic'
     
+    print(f"📝 Formatting {len(tools)} tool(s) for model family: {model_family}")
+    
     # Use appropriate formatter
     if model_family == 'qwen':
-        return format_tools_for_qwen(tools)
+        formatted = format_tools_for_qwen(tools)
     elif model_family == 'llama':
-        return format_tools_for_llama(tools)
+        formatted = format_tools_for_llama(tools)
     elif model_family == 'mistral':
-        return format_tools_for_mistral(tools)
+        formatted = format_tools_for_mistral(tools)
     elif model_family == 'phi':
-        return format_tools_for_phi(tools)
+        formatted = format_tools_for_phi(tools)
     else:
-        return format_tools_for_generic(tools)
+        formatted = format_tools_for_generic(tools)
+    
+    print(f"📝 Formatted tools prompt length: {len(formatted)} characters")
+    return formatted
 
 
 def parse_tool_calls_from_response(response_text: str, model_name: str = None) -> Tuple[str, List[ToolCall]]:
@@ -533,10 +538,23 @@ def build_chat_prompt(messages: List[ChatMessage], tools: Optional[List[ToolDefi
     # Add system content at the beginning if present
     if system_content:
         prompt_parts.insert(0, f"<|im_start|>system\n{system_content}<|im_end|>\n")
+        # Log a preview of the tools section
+        if "Available Tools" in system_content or "Available Functions" in system_content:
+            preview_lines = system_content.split('\n')[:10]  # First 10 lines
+            print(f"📝 Tools section preview (first 10 lines):")
+            for line in preview_lines:
+                print(f"   {line}")
     
     prompt_parts.append("<|im_start|>assistant\n")
     
-    return "".join(prompt_parts)
+    full_prompt = "".join(prompt_parts)
+    if tools:
+        print(f"📝 Full prompt length: {len(full_prompt)} characters")
+        # Show where tools appear in prompt
+        if "Available Tools" in full_prompt or "Available Functions" in full_prompt:
+            print(f"✅ Tools section confirmed in prompt")
+    
+    return full_prompt
 
 
 def format_chat_prompt(messages: List[ChatMessage]) -> str:

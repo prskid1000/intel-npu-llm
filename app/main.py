@@ -27,8 +27,12 @@ from .routes import (
     embeddings as embeddings_route,
     moderation as moderation_route,
     vector_store as vector_store_route,
-    images as images_route
+    images as images_route,
+    mcp_servers as mcp_servers_route
 )
+from .mcp_client_manager import MCPClientManager
+from .tool_service import tool_service
+from .tool_executor import tool_executor
 from . import realtime
 
 
@@ -67,6 +71,7 @@ model_manager: Optional[ModelManager] = None
 file_storage: Optional[FileStorageManager] = None
 vector_store: Optional[VectorStore] = None
 session_manager: Optional[SessionManager] = None
+mcp_manager: Optional[MCPClientManager] = None
 
 
 # ============================================================================
@@ -97,6 +102,15 @@ async def lifespan(app: FastAPI):
         model_manager = ModelManager(config)
         await model_manager.load_models()
         
+        # Initialize MCP client manager
+        mcp_manager = MCPClientManager()
+        
+        # Initialize tool executor with model manager (for image generation tool)
+        tool_executor.set_model_manager(model_manager)
+        
+        # Initialize tool service with MCP manager
+        tool_service.mcp_manager = mcp_manager
+        
         # Set dependencies in route modules
         models_route.set_model_manager(model_manager)
         chat_route.set_dependencies(model_manager, file_storage, None)
@@ -107,15 +121,23 @@ async def lifespan(app: FastAPI):
         moderation_route.set_model_manager(model_manager)
         vector_store_route.set_dependencies(model_manager, vector_store)
         images_route.set_model_manager(model_manager)
+        mcp_servers_route.set_mcp_manager(mcp_manager)
         
         print(f"🚀 Server ready at http://{config.host}:{config.port}")
         print(f"📚 Available models: {', '.join(model_manager.list_models())}")
+        print(f"🔧 Tool executor initialized with {len(tool_executor.tool_registry)} built-in tools")
+        print(f"🔌 MCP Server Manager initialized")
         
     except Exception as e:
         print(f"❌ Failed to start server: {e}")
         raise
     
     yield
+    
+    # Cleanup
+    if mcp_manager:
+        print("🔄 Disconnecting MCP servers...")
+        await mcp_manager.disconnect_all_servers()
     
     if model_manager:
         await model_manager.cleanup()
@@ -203,6 +225,7 @@ app.include_router(embeddings_route.router, tags=["Embeddings"])
 app.include_router(moderation_route.router, tags=["Moderation"])
 app.include_router(vector_store_route.router, tags=["Vector Store"])
 app.include_router(images_route.router, tags=["Images"])
+app.include_router(mcp_servers_route.router, tags=["MCP Servers"])
 
 
 # ============================================================================

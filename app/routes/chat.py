@@ -113,7 +113,12 @@ async def chat_completions(request: ChatCompletionRequest):
     else:
         images = []
         file_ids = []
-        prompt = build_chat_prompt(request.messages, request.tools if use_tools else None, request.model)
+        tools_to_include = request.tools if use_tools else None
+        if tools_to_include:
+            print(f"🔧 Including {len(tools_to_include)} tool(s) in prompt:")
+            for tool in tools_to_include:
+                print(f"   - {tool.function.name}: {tool.function.description}")
+        prompt = build_chat_prompt(request.messages, tools_to_include, request.model)
         
         if use_json_mode:
             json_instruction = "\n\nIMPORTANT: You must respond with valid JSON only. "
@@ -171,112 +176,273 @@ async def chat_completions_non_streaming(
     use_json_mode: bool = False,
     json_schema: Optional[Dict[str, Any]] = None
 ) -> ChatCompletionResponse:
-    """Non-streaming chat completion handler"""
+    """Non-streaming chat completion handler with tool calling support"""
     
-    # VLM history management: Reload on error
-    # When VLM accumulates too much history, it throws:
-    # "Check 'prompt_ids.get_size() >= tokenized_history.size()' failed"
-    
-    try:
-        if model_type == "vlm":
-            if images:
-                # VLM with images
-                image_tensor = images[0]
-                result = pipeline.generate(prompt, image=image_tensor, max_new_tokens=config.max_new_tokens)
-                response_text = result if isinstance(result, str) else result.texts[0]
-            else:
-                # VLM text-only mode - create dummy image for NPU compatibility
-                # Create a small 224x224 black image (minimal memory footprint)
-                dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
-                dummy_tensor = ov.Tensor(dummy_image)
-                
-                # Pass dummy image to satisfy NPU requirement
-                result = pipeline.generate(prompt, image=dummy_tensor, max_new_tokens=config.max_new_tokens)
-                response_text = result if isinstance(result, str) else result.texts[0]
-        else:
-            # LLM mode
-            response_text = pipeline.generate(prompt, config)
-    except Exception as e:
-        error_msg = str(e)
-        # Check if it's a VLM error that requires pipeline reload
-        vlm_reload_errors = [
-            "prompt_ids.get_size() >= tokenized_history.size()",
-            "Prompt ids size is less than tokenized history size",
-            "MAX_PROMPT_LEN",  # NPU prompt length exceeded
-            "inputs_embeds.get__shape().at(1) <= m_max_prompt_len"  # NPU max prompt check
-        ]
-        if model_type == "vlm" and any(err_pattern in error_msg for err_pattern in vlm_reload_errors):
-            print(f"⚠️  VLM error detected, reloading pipeline with updated config...")
-            # Get model manager to reload the VLM
-            from ..main import model_manager
-            if model_manager and model_manager.reload_vlm_pipeline(request.model):
-                # Retry after reload
-                print(f"🔄 Retrying generation after VLM reload...")
-                pipeline = model_manager.get_pipeline(request.model)
-                try:
-                    if images:
-                        image_tensor = images[0]
-                        result = pipeline.generate(prompt, image=image_tensor, max_new_tokens=config.max_new_tokens)
-                        response_text = result if isinstance(result, str) else result.texts[0]
-                    else:
-                        dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
-                        dummy_tensor = ov.Tensor(dummy_image)
-                        result = pipeline.generate(prompt, image=dummy_tensor, max_new_tokens=config.max_new_tokens)
-                        response_text = result if isinstance(result, str) else result.texts[0]
-                except Exception as retry_error:
-                    raise HTTPException(status_code=500, detail=f"Generation failed after reload: {str(retry_error)}")
-            else:
-                raise HTTPException(status_code=500, detail=f"VLM reload failed: {error_msg}")
-        else:
-            raise HTTPException(status_code=500, detail=f"Generation failed: {error_msg}")
-    
-    # Apply stop sequences if configured (post-processing workaround for OpenVINO GenAI)
-    was_stopped = False
-    if request.stop:
-        stop_strings = [request.stop] if isinstance(request.stop, str) else request.stop
-        print(f"🛑 Checking stop sequences: {stop_strings}")
-        print(f"   Response length before: {len(response_text)} chars")
-        response_text, was_stopped = apply_stop_sequences(response_text, stop_strings)
-        if was_stopped:
-            print(f"   ✅ Stop sequence triggered, truncated to {len(response_text)} chars")
-        else:
-            print(f"   ⚠️  No stop sequence found in response")
-    
-    # Parse response
+    # Build conversation history for tool calling (like Omni)
+    conversation_messages = [msg.dict() for msg in request.messages] if request.messages else []
+    max_iterations = 5  # Limit tool calling iterations
+    iteration = 0
+    final_response = None
+    final_content = None
     tool_calls = None
     finish_reason = "stop"
-    final_content = response_text
     
-    if use_tools:
-        cleaned_text, parsed_tool_calls = parse_tool_calls_from_response(response_text, request.model)
-        if parsed_tool_calls:
-            tool_calls = parsed_tool_calls
-            final_content = cleaned_text if cleaned_text else None
-            finish_reason = "tool_calls"
+    # Track the original prompt for first iteration
+    original_prompt = prompt
+    original_images = images
     
-    if use_json_mode:
+    # Tool calling loop (like Omni)
+    while iteration < max_iterations:
+        iteration += 1
+        print(f"🔄 Tool calling iteration {iteration}/{max_iterations}")
+        
+        # VLM history management: Reload on error
+        # When VLM accumulates too much history, it throws:
+        # "Check 'prompt_ids.get_size() >= tokenized_history.size()' failed"
+        
+        try:
+            if model_type == "vlm":
+                if images:
+                    # VLM with images
+                    image_tensor = images[0]
+                    result = pipeline.generate(prompt, image=image_tensor, max_new_tokens=config.max_new_tokens)
+                    response_text = result if isinstance(result, str) else result.texts[0]
+                else:
+                    # VLM text-only mode - create dummy image for NPU compatibility
+                    # Create a small 224x224 black image (minimal memory footprint)
+                    dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
+                    dummy_tensor = ov.Tensor(dummy_image)
+                    
+                    # Pass dummy image to satisfy NPU requirement
+                    result = pipeline.generate(prompt, image=dummy_tensor, max_new_tokens=config.max_new_tokens)
+                    response_text = result if isinstance(result, str) else result.texts[0]
+            else:
+                # LLM mode
+                response_text = pipeline.generate(prompt, config)
+        except Exception as e:
+            error_msg = str(e)
+            # Check if it's a VLM error that requires pipeline reload
+            vlm_reload_errors = [
+                "prompt_ids.get_size() >= tokenized_history.size()",
+                "Prompt ids size is less than tokenized history size",
+                "MAX_PROMPT_LEN",  # NPU prompt length exceeded
+                "inputs_embeds.get__shape().at(1) <= m_max_prompt_len"  # NPU max prompt check
+            ]
+            if model_type == "vlm" and any(err_pattern in error_msg for err_pattern in vlm_reload_errors):
+                print(f"⚠️  VLM error detected, reloading pipeline with updated config...")
+                # Get model manager to reload the VLM
+                from ..main import model_manager
+                if model_manager and model_manager.reload_vlm_pipeline(request.model):
+                    # Retry after reload
+                    print(f"🔄 Retrying generation after VLM reload...")
+                    pipeline = model_manager.get_pipeline(request.model)
+                    try:
+                        if images:
+                            image_tensor = images[0]
+                            result = pipeline.generate(prompt, image=image_tensor, max_new_tokens=config.max_new_tokens)
+                            response_text = result if isinstance(result, str) else result.texts[0]
+                        else:
+                            dummy_image = np.zeros((224, 224, 3), dtype=np.uint8)
+                            dummy_tensor = ov.Tensor(dummy_image)
+                            result = pipeline.generate(prompt, image=dummy_tensor, max_new_tokens=config.max_new_tokens)
+                            response_text = result if isinstance(result, str) else result.texts[0]
+                    except Exception as retry_error:
+                        raise HTTPException(status_code=500, detail=f"Generation failed after reload: {str(retry_error)}")
+                else:
+                    raise HTTPException(status_code=500, detail=f"VLM reload failed: {error_msg}")
+            else:
+                raise HTTPException(status_code=500, detail=f"Generation failed: {error_msg}")
+        
+        # Apply stop sequences if configured (post-processing workaround for OpenVINO GenAI)
+        was_stopped = False
+        if request.stop:
+            stop_strings = [request.stop] if isinstance(request.stop, str) else request.stop
+            print(f"🛑 Checking stop sequences: {stop_strings}")
+            print(f"   Response length before: {len(response_text)} chars")
+            response_text, was_stopped = apply_stop_sequences(response_text, stop_strings)
+            if was_stopped:
+                print(f"   ✅ Stop sequence triggered, truncated to {len(response_text)} chars")
+            else:
+                print(f"   ⚠️  No stop sequence found in response")
+        
+        # Store final response (will be overwritten if we continue)
+        final_response = response_text
+        
+        # Check for tool calls in response
+        if use_tools:
+            cleaned_text, parsed_tool_calls = parse_tool_calls_from_response(response_text, request.model)
+            print(f"🔍 Iteration {iteration}: Found {len(parsed_tool_calls) if parsed_tool_calls else 0} tool call(s)")
+            
+            # If no tool calls, return the final response
+            if not parsed_tool_calls or not use_tools:
+                # Clean up tool call markers from response
+                final_content = cleaned_text if cleaned_text else final_response
+                if not final_content:
+                    final_content = final_response
+                break
+            
+            # Execute tool calls
+            print(f"🔧 Executing {len(parsed_tool_calls)} tool call(s)...")
+            try:
+                from ..tool_service import tool_service
+                import json
+                
+                # Execute each tool call
+                tool_results = []
+                for tool_call in parsed_tool_calls:
+                    tool_name = tool_call.function.name
+                    try:
+                        # Parse arguments
+                        arguments_str = tool_call.function.arguments
+                        if isinstance(arguments_str, str):
+                            arguments = json.loads(arguments_str)
+                        else:
+                            arguments = arguments_str
+                        
+                        # Execute tool
+                        result = await tool_service.execute_tool(tool_name, arguments)
+                        
+                        # Format result
+                        if isinstance(result, (dict, list)):
+                            result_str = json.dumps(result, ensure_ascii=False)
+                        else:
+                            result_str = str(result)
+                        
+                        tool_results.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": tool_name,
+                            "content": result_str
+                        })
+                        print(f"✅ Tool '{tool_name}' executed successfully")
+                    except Exception as e:
+                        error_msg = str(e)
+                        tool_results.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": tool_name,
+                            "content": f"Error: {error_msg}"
+                        })
+                        print(f"❌ Tool '{tool_name}' execution failed: {error_msg}")
+                
+                # Add assistant message with tool calls to conversation
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": response_text,
+                    "tool_calls": [tc.dict() if hasattr(tc, 'dict') else tc for tc in parsed_tool_calls]
+                }
+                conversation_messages.append(assistant_msg)
+                
+                # Add tool results to conversation
+                tool_results_text = "Tool results:\n"
+                for tool_result in tool_results:
+                    tool_msg = {
+                        "role": "tool",
+                        "content": tool_result["content"],
+                        "tool_call_id": tool_result["tool_call_id"]
+                    }
+                    conversation_messages.append(tool_msg)
+                    tool_results_text += f"- {tool_result['name']}: {tool_result['content']}\n"
+                
+                # Create a new user message with tool results to continue the conversation
+                continue_msg = {
+                    "role": "user",
+                    "content": f"Based on the tool results, please provide a final answer:\n{tool_results_text}"
+                }
+                conversation_messages.append(continue_msg)
+                
+                # Rebuild prompt with updated conversation for next iteration
+                if model_type == "vlm":
+                    # For VLM, rebuild from conversation messages
+                    prompt, images, _ = extract_content_parts(
+                        [ChatMessage(**msg) for msg in conversation_messages],
+                        file_storage
+                    )
+                else:
+                    # For LLM, rebuild prompt from conversation
+                    tools_to_include = request.tools if use_tools else None
+                    if tools_to_include:
+                        print(f"🔧 Rebuilding prompt with {len(tools_to_include)} tool(s) for iteration {iteration + 1}")
+                    prompt = build_chat_prompt(
+                        [ChatMessage(**msg) for msg in conversation_messages],
+                        tools_to_include,
+                        request.model
+                    )
+                    images = []
+                
+                # Continue generation with tool results (next iteration)
+                continue
+                
+            except Exception as e:
+                print(f"⚠️  Tool execution error: {e}")
+                # Break and return tool_calls for client-side execution
+                tool_calls = parsed_tool_calls
+                final_content = cleaned_text if cleaned_text else final_response
+                finish_reason = "tool_calls"
+                break
+        else:
+            # No tools, just return the response
+            final_content = response_text
+            break
+    
+    # If we've exhausted iterations, use the last response we got
+    if final_content is None and final_response:
+        final_content = final_response
+    
+    # Apply JSON mode processing if needed
+    if use_json_mode and final_content:
         if json_schema:
-            is_valid, error_msg = validate_json_schema(response_text, json_schema)
+            is_valid, error_msg = validate_json_schema(final_content, json_schema)
             if not is_valid:
-                json_content = extract_json_from_response(response_text)
+                json_content = extract_json_from_response(final_content)
                 if json_content:
                     final_content = json_content
                 else:
                     raise HTTPException(status_code=400, detail=f"Response does not match schema: {error_msg}")
             else:
-                final_content = extract_json_from_response(response_text) or response_text
+                final_content = extract_json_from_response(final_content) or final_content
         else:
-            json_content = extract_json_from_response(response_text)
+            json_content = extract_json_from_response(final_content)
             if json_content:
                 final_content = json_content
     
     # Token estimation
-    prompt_tokens = len(prompt.split())
-    completion_tokens = len(response_text.split())
+    response_text_for_tokens = final_content or final_response or ""
+    prompt_tokens = len(original_prompt.split()) if original_prompt else 0
+    completion_tokens = len(response_text_for_tokens.split())
     
     response_message = ChatMessage(role="assistant", content=final_content)
     if tool_calls:
         response_message.tool_calls = tool_calls
+        finish_reason = "tool_calls"
+    else:
+        finish_reason = "stop"
+    
+    # Build conversation_messages for UI (only include tool-related messages if present)
+    conversation_for_ui = None
+    if tool_calls or any(msg.get("role") == "tool" for msg in conversation_messages):
+        conversation_for_ui = []
+        # Only include tool-related messages, not all history
+        for msg in conversation_messages:
+            if msg.get("role") in ["tool"] or (msg.get("role") == "assistant" and msg.get("tool_calls")):
+                msg_dict = {
+                    "role": msg.get("role"),
+                    "content": msg.get("content", ""),
+                }
+                if msg.get("tool_calls"):
+                    msg_dict["tool_calls"] = msg.get("tool_calls")
+                if msg.get("tool_call_id"):
+                    msg_dict["tool_call_id"] = msg.get("tool_call_id")
+                conversation_for_ui.append(msg_dict)
+        
+        # Add the final assistant response
+        final_msg_dict = {
+            "role": "assistant",
+            "content": final_content or ""
+        }
+        if tool_calls:
+            final_msg_dict["tool_calls"] = [tc.dict() if hasattr(tc, 'dict') else tc for tc in tool_calls]
+        conversation_for_ui.append(final_msg_dict)
     
     # Generate logprobs if requested
     logprobs_data = None
@@ -447,23 +613,29 @@ async def chat_completions_non_streaming(
         else:
             print(f"⚠️  Audio output requested but no TTS model loaded")
     
-    return ChatCompletionResponse(
-        id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
-        created=int(time.time()),
-        model=request.model,
-        choices=[ChatCompletionChoice(
-            index=0,
-            message=response_message,
-            finish_reason=finish_reason,
-            logprobs=logprobs_data
-        )],
-        usage=Usage(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=prompt_tokens + completion_tokens
-        ),
-        system_fingerprint=f"fp_{uuid.uuid4().hex[:16]}"
-    )
+    response_dict = {
+        "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": request.model,
+        "choices": [{
+            "index": 0,
+            "message": response_message.dict(),
+            "finish_reason": finish_reason,
+            "logprobs": logprobs_data.dict() if logprobs_data else None
+        }],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens
+        }
+    }
+    
+    # Add conversation_messages if present
+    if conversation_for_ui:
+        response_dict["conversation_messages"] = conversation_for_ui
+    
+    return ChatCompletionResponse(**response_dict)
 
 
 async def stream_chat_completion(
